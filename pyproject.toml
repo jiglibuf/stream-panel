@@ -1,0 +1,23 @@
+[project]
+name = "obs-panel"
+version = "0.1.0"
+description = "Пульт стрима: управление OBS с планшета (сцены, транспорт, звук)"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.14",
+    "websockets>=15",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9", "pytest-asyncio>=1.4"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "unit: без сети и процессов",
+    "integration: HTTP/WS против фейкового OBS, локальные сокеты",
+    "e2e_live: требует запущенный OBS на 127.0.0.1:4455 (меняет состояние OBS)",
+]
+addopts = "-m 'not e2e_live'"
+filterwarnings = ["error::DeprecationWarning:tests.*"]

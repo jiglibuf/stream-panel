@@ -1,0 +1,19 @@
+# окружение и сборка
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+node_modules/
+frontend/dist/
+
+# состояние пульта (не в git): токен, журнал, звуки
+/config.json
+/journal.jsonl*
+/sounds/
+
+# ТЗ живёт вне репозитория (конвенция проекта)
+docs/TZ-*.md
+
+# служебное
+scratch/
+*.log
