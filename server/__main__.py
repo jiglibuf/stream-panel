@@ -22,10 +22,22 @@ from aiohttp import web
 from .app import create_app
 from .commands import Commands
 from .config import DEFAULT_CONFIG_PATH, load_or_create
+from .journal import Journal
 from .obs import Obs, load_connection
 from .panel import Panel
 
 _log = logging.getLogger("panel.main")
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def _journal_path(cfg: dict) -> pathlib.Path:
+    """Путь журнала: параметр journal_path из конфига, иначе journal.jsonl в корне проекта."""
+    value = cfg.get("journal_path")
+    if not value:
+        return ROOT / "journal.jsonl"
+    path = pathlib.Path(value)
+    return path if path.is_absolute() else ROOT / path
 
 
 def _obs_config_path() -> pathlib.Path:
@@ -55,8 +67,10 @@ async def main() -> None:
     obs = Obs(host=host, port=port, password=password)
     panel = Panel(obs)
     commands = Commands(obs, panel)
+    journal = Journal(_journal_path(cfg))
     app = create_app(obs=obs, panel=panel, commands=commands,
-                     token=cfg["token"], config_path=DEFAULT_CONFIG_PATH)
+                     token=cfg["token"], config_path=DEFAULT_CONFIG_PATH,
+                     journal=journal)
 
     runner = web.AppRunner(app)
     await runner.setup()
