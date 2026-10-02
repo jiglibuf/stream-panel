@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import copy
 import hashlib
 import json
 
@@ -87,13 +88,29 @@ class FakeObsServer:
                     return
                 if self.silent:
                     continue
-                spec = dict(self.responses.get(req["requestType"], {}))
-                spec.setdefault("requestStatus", {"result": True})
+                spec = self._reply(req["requestType"])
                 await ws.send(json.dumps({"op": 7, "d": {
                     "requestType": req["requestType"],
                     "requestId": req["requestId"], **spec}}))
         finally:
             self._clients.discard(ws)
+
+    # Ответ настоящего obs-websocket v5 на неизвестный тип запроса.
+    UNKNOWN_REQUEST = {"requestStatus": {"result": False, "code": 204,
+                                         "comment": "Your request type is not valid"}}
+
+    def _reply(self, request_type: str) -> dict:
+        """Готовый ответ на запрос; неизвестный тип — отказ 204, как у OBS.
+
+        Раньше на любой запрос отвечали успехом: фейк и код могли разделить одну
+        выдумку (например несуществующий запрос GetInputVolumeMeters), и баг
+        доживал до живого прогона.
+        """
+        if request_type not in self.responses:
+            return copy.deepcopy(self.UNKNOWN_REQUEST)
+        spec = dict(self.responses[request_type])
+        spec.setdefault("requestStatus", {"result": True})
+        return spec
 
     async def emit(self, event_type: str, **data):
         """Послать событие op5 всем подключённым клиентам."""

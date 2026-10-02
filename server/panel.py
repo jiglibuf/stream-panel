@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 import time
 
 MIC = "Микрофон"
@@ -40,7 +41,8 @@ _EMPTY_RECORD = {"active": False, "time": ""}
 # 10 с. Равные значения заставляли бы stale мигать ровно на границе опроса.
 DEFAULT_REFRESH_INTERVAL = 2.0
 DEFAULT_STALE_AFTER = 10.0
-DEFAULT_METER_INTERVAL = 0.2
+# Сколько секунд уровень считается «живым» после последнего события метроб.
+DEFAULT_METER_STALE_AFTER = 1.0
 
 
 def _timecode(value) -> str:
@@ -58,6 +60,26 @@ def _percent(multiplier) -> int | None:
     return max(0, min(100, percent))
 
 
+def _magnitude(channels) -> float:
+    """Уровень входа из inputLevelsMul: магнитуда (индекс 0) самого громкого канала.
+
+    У OBS на канал идут три числа: магнитуда, пик, inputPeak. Пиковые поля бывают
+    мусорными (наблюдали 3.048e+32 при нулевой магнитуде), поэтому читаем только
+    магнитуду и зажимаем её снизу нулём. Нет пригодных данных — 0.0.
+    """
+    values: list[float] = []
+    for channel in channels or []:
+        if not channel:
+            continue
+        try:
+            value = float(channel[0])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if math.isfinite(value):
+            values.append(max(0.0, value))
+    return max(values) if values else 0.0
+
+
 class Panel:
     """Держит последний снапшот состояния OBS и умеет его обновлять.
 
@@ -67,7 +89,7 @@ class Panel:
 
     def __init__(self, obs, *, scene_nums=None, mic: str = MIC, sys: str = SYS,
                  stale_after: float = DEFAULT_STALE_AFTER,
-                 meter_interval: float = DEFAULT_METER_INTERVAL,
+                 meter_stale_after: float = DEFAULT_METER_STALE_AFTER,
                  refresh_interval: float = DEFAULT_REFRESH_INTERVAL,
                  clock=time.monotonic):
         self.obs = obs
@@ -75,18 +97,26 @@ class Panel:
         self.mic = mic
         self.sys = sys
         self.stale_after = float(stale_after)
-        self.meter_interval = float(meter_interval)
+        self.meter_stale_after = float(meter_stale_after)
         self.refresh_interval = float(refresh_interval)
         self.clock = clock
         self._snap = self._empty()
         self._updated_at = self.clock()
+        # Момент последнего события метроб; -inf — уровней ещё не было.
+        self._meters_at = float("-inf")
 
     # ── чтение состояния ──
     @property
     def state(self) -> dict:
-        """Копия последнего снапшота; stale пересчитывается на момент чтения."""
+        """Копия последнего снапшота; stale пересчитывается на момент чтения.
+
+        Уровни звука — тоже живые данные: без связи или если события метроб
+        замолчали дольше порога, показываем их неизвестными, а не застывшими.
+        """
         snap = copy.deepcopy(self._snap)
         snap["stale"] = self.is_stale()
+        if not self.obs.connected or not self._meters_fresh():
+            snap["audio"] = self._unknown_levels(snap.get("audio"))
         return snap
 
     def is_stale(self) -> bool:
@@ -125,32 +155,25 @@ class Panel:
         self._store(snap, now)
         return self.state
 
-    async def poll_meters(self) -> None:
-        """Один опрос уровней звука; при офлайне тихо выходит, не трогая OBS."""
-        if not self.obs.connected:
+    # ── события OBS ──
+    def on_event(self, event) -> None:
+        """Событие obs-websocket: уровни звука и смена связи.
+
+        Метры приходят ТОЛЬКО событием InputVolumeMeters — запроса для них в
+        obs-websocket v5 нет. Пока связи нет, событие не применяем: снапшот не
+        должен показывать живой уровень по мёртвому соединению.
+        """
+        if not isinstance(event, dict):
             return
-        try:
-            data = await self.obs.req("GetInputVolumeMeters")
-        except Exception:
-            return
-        levels = self._parse_meters(data)
-        audio = dict(self._snap.get("audio") or {})
-        for key, name in (("mic", self.mic), ("sys", self.sys)):
-            channel = dict(audio.get(key) or {"mute": None, "vol": None, "level": None})
-            channel["level"] = levels.get(name)
-            audio[key] = channel
-        self._snap = {**self._snap, "audio": audio}
+        kind = event.get("type")
+        if kind in ("connected", "disconnected"):
+            self._reset_meters()
+        elif event.get("eventType") == "InputVolumeMeters" and self.obs.connected:
+            self._apply_meters(event.get("eventData") or {})
 
     async def run(self) -> None:
-        """Два независимых цикла: метры и полный рефреш; отменяются чисто."""
-        tasks = [asyncio.create_task(self._tick(self.meter_interval, self.poll_meters)),
-                 asyncio.create_task(self._tick(self.refresh_interval, self.refresh))]
-        try:
-            await asyncio.gather(*tasks)
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        """Полный рефреш по расписанию; уровни звука приходят событием on_event."""
+        await self._tick(self.refresh_interval, self.refresh)
 
     # ── внутреннее ──
     async def _tick(self, interval: float, action) -> None:
@@ -192,6 +215,8 @@ class Panel:
     async def _audio(self, key: str, name: str) -> dict:
         """mute/vol одного источника; отказ любого из двух запросов -> None."""
         prev_level = ((self._snap.get("audio") or {}).get(key) or {}).get("level")
+        if not self._meters_fresh():
+            prev_level = None
         try:
             muted = await self.obs.req("GetInputMute", inputName=name)
             volume = await self.obs.req("GetInputVolume", inputName=name)
@@ -201,16 +226,40 @@ class Panel:
                 "vol": _percent(volume.get("inputVolumeMul")),
                 "level": prev_level}
 
+    def _apply_meters(self, event_data: dict) -> None:
+        """InputVolumeMeters -> уровни в снапшоте (магнитуда, может быть и > 1)."""
+        levels: dict = {}
+        for item in event_data.get("inputs") or []:
+            if not isinstance(item, dict):
+                continue
+            levels[item.get("inputName")] = _magnitude(item.get("inputLevelsMul"))
+        audio = dict(self._snap.get("audio") or {})
+        for key, name in (("mic", self.mic), ("sys", self.sys)):
+            channel = dict(audio.get(key) or {"mute": None, "vol": None, "level": None})
+            # Источника нет в событии — он честно неизвестен, а не застыл.
+            channel["level"] = levels.get(name)
+            audio[key] = channel
+        self._snap = {**self._snap, "audio": audio}
+        self._meters_at = self.clock()
+
+    def _reset_meters(self) -> None:
+        """Связь сменилась — прежние уровни недействительны."""
+        self._meters_at = float("-inf")
+        self._snap = {**self._snap,
+                      "audio": self._unknown_levels(self._snap.get("audio"))}
+
+    def _meters_fresh(self) -> bool:
+        return (self.clock() - self._meters_at) <= self.meter_stale_after
+
     @staticmethod
-    def _parse_meters(data: dict) -> dict:
-        """GetInputVolumeMeters -> {inputName: уровень}. Берём последний сэмпл
-        каждого канала и максимум по каналам (может превышать 1 при клиппинге)."""
-        levels: dict[str, float | None] = {}
-        for item in data.get("inputs") or []:
-            samples = [channel[-1]
-                       for channel in (item.get("inputLevelsMul") or []) if channel]
-            levels[item.get("inputName")] = max(samples) if samples else None
-        return levels
+    def _unknown_levels(audio) -> dict:
+        """Копия audio с обнулёнными уровнями (уровень неизвестен)."""
+        out = {}
+        for key, channel in (audio or {}).items():
+            channel = dict(channel or {})
+            channel["level"] = None
+            out[key] = channel
+        return out
 
     def _sort_scenes(self, names: list[str]) -> list[dict]:
         """Сцены по номеру numpad; сцены без маппинга — в конце с num=None."""

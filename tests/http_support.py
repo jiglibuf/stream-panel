@@ -36,7 +36,7 @@ async def make_stack(*, token: str = TOKEN, interval: float = 0.05,
                      frontend_dir=None, refresh: bool = True, journal=None):
     """Собрать (app, obs, panel) и, по умолчанию, наполнить снапшот."""
     obs = FakeObs(responses=RESPONSES)
-    panel = Panel(obs, refresh_interval=5.0, meter_interval=5.0)
+    panel = Panel(obs, refresh_interval=5.0, meter_stale_after=5.0)
     commands = Commands(obs, panel)
     app = create_app(obs=obs, panel=panel, commands=commands, token=token,
                      frontend_dir=frontend_dir, push_interval=interval, journal=journal)

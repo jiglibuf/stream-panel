@@ -293,6 +293,12 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
     app[CONFIG_PATH_KEY] = config_path
     app[JOURNAL_KEY] = journal
 
+    # Уровни звука приходят событием InputVolumeMeters, а не запросом: связываем
+    # клиент OBS с панелью здесь, чтобы событие доезжало до снапшота и до /ws,
+    # даже если сборщик (E2E) не сделал этого сам.
+    if getattr(obs, "on_event", None) is None and hasattr(panel, "on_event"):
+        obs.on_event = panel.on_event
+
     # ── обработчики ──
     async def state_handler(request):
         return web.json_response(panel.state)

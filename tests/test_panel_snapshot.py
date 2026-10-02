@@ -71,7 +71,7 @@ def test_defaults_follow_tz_intervals():
 
     assert panel.refresh_interval == 2.0
     assert panel.stale_after == 10.0
-    assert panel.meter_interval < panel.refresh_interval
+    assert panel.meter_stale_after > 0
     assert panel.stale_after >= 2 * panel.refresh_interval
 
 
@@ -212,35 +212,88 @@ async def test_stale_recalculated_on_read():
     assert panel.is_stale() is True
 
 
-# ── 8. уровни звука ──
+# ── 8. уровни звука (событие InputVolumeMeters, а не запрос) ──
+#
+# В obs-websocket v5 запроса для метроб нет: уровни приходят событием op5.
+# Пиковые поля у OBS бывают мусорными, поэтому читаем только магнитуду (индекс 0).
 
-async def test_poll_meters_sets_levels_and_offline_is_noop():
-    fake = FakeObs(responses={"GetInputVolumeMeters": {"inputs": [
-        {"inputName": MIC, "inputLevelsMul": [[0.1, 0.5], [0.2, 0.8]]},
-        {"inputName": SYS, "inputLevelsMul": [[0.3, 0.9]]}]}})
-    panel = panel_for(fake)
+def meter_event(*inputs: dict) -> dict:
+    return {"type": "event", "eventType": "InputVolumeMeters",
+            "eventIntent": 1 << 16, "eventData": {"inputs": list(inputs)}}
 
-    assert panel.state["audio"]["mic"]["level"] is None
-    await panel.poll_meters()
+
+def input_levels(name: str, *magnitudes: float) -> dict:
+    """Три числа на канал: магнитуда, пик, inputPeak."""
+    return {"inputName": name,
+            "inputLevelsMul": [[m, m, m] for m in magnitudes]}
+
+
+async def test_meter_event_sets_levels_from_magnitude():
+    panel = Panel(FakeObs(), clock=Clock())
+    panel.on_event(meter_event(input_levels(MIC, 0.25, 0.4),
+                               input_levels(SYS, 0.1)))
+
     snap = panel.state
-    assert snap["audio"]["mic"]["level"] == 0.8
-    assert snap["audio"]["sys"]["level"] == 0.9
-
-    offline = FakeObs(connected=False)
-    panel2 = panel_for(offline)
-    await panel2.poll_meters()
-    assert offline.calls == []
-    assert panel2.state["audio"]["mic"]["level"] is None
+    assert snap["audio"]["mic"]["level"] == 0.4  # максимум магнитуд по каналам
+    assert snap["audio"]["sys"]["level"] == 0.1
 
 
-async def test_poll_meters_clipping_over_one_and_missing_source():
-    fake = FakeObs(responses={"GetInputVolumeMeters": {"inputs": [
-        {"inputName": MIC, "inputLevelsMul": [[1.2]]}]}})
-    panel = panel_for(fake)
-    await panel.poll_meters()
+async def test_meter_event_reads_magnitude_not_garbage_peaks():
+    # Магнитуда 0.0, а пиковые поля мусорные (3e32) — уровень ровно 0.
+    panel = Panel(FakeObs(), clock=Clock())
+    panel.on_event(meter_event({"inputName": MIC, "inputLevelsMul": [
+        [0.0, 3.048128113421378e+32, 3.048128113421378e+32]]}))
+
+    level = panel.state["audio"]["mic"]["level"]
+    assert level == 0.0
+    assert level is not None
+
+
+async def test_meter_event_clipping_and_missing_source():
+    panel = Panel(FakeObs(), clock=Clock())
+    panel.on_event(meter_event(input_levels(MIC, 1.2)))
 
     assert panel.state["audio"]["mic"]["level"] == 1.2
     assert panel.state["audio"]["sys"]["level"] is None
+
+
+async def test_refresh_keeps_fresh_level():
+    fake = FakeObs(responses={"GetSceneList": scene_list("Dota 2", "Dota 2")})
+    panel = Panel(fake, clock=Clock())
+    panel.on_event(meter_event(input_levels(MIC, 0.7)))
+
+    await panel.refresh()
+    assert panel.state["audio"]["mic"]["level"] == 0.7
+
+
+async def test_levels_go_unknown_when_events_stop():
+    """Событий нет дольше порога — уровень не застывает, становится None."""
+    clock = Clock(1000.0)
+    panel = Panel(FakeObs(), clock=clock, meter_stale_after=0.5)
+    panel.on_event(meter_event(input_levels(MIC, 0.8)))
+    assert panel.state["audio"]["mic"]["level"] == 0.8
+
+    clock.t += 0.6
+    assert panel.state["audio"]["mic"]["level"] is None
+
+
+async def test_offline_ignores_events_and_hides_stale_levels():
+    fake = FakeObs(connected=True)
+    panel = Panel(fake, clock=Clock())
+    panel.on_event(meter_event(input_levels(MIC, 0.9)))
+    assert panel.state["audio"]["mic"]["level"] == 0.9
+
+    fake.connected = False  # связь пропала — событие не применяем
+    panel.on_event(meter_event(input_levels(MIC, 0.5)))
+    snap = panel.state
+    assert snap["audio"]["mic"]["level"] is None
+    assert snap["audio"]["sys"]["level"] is None
+
+
+async def test_offline_from_start_never_shows_level():
+    panel = Panel(FakeObs(connected=False), clock=Clock())
+    panel.on_event(meter_event(input_levels(MIC, 0.9)))
+    assert panel.state["audio"]["mic"]["level"] is None
 
 
 # ── state отдаёт копию, а не внутренний снапшот ──
