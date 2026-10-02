@@ -66,6 +66,8 @@ async def main() -> None:
 
     obs = Obs(host=host, port=port, password=password)
     panel = Panel(obs)
+    # Метры звука приходят событием: без этой связки уровни останутся пустыми.
+    obs.on_event = panel.on_event
     commands = Commands(obs, panel)
     journal = Journal(_journal_path(cfg))
     app = create_app(obs=obs, panel=panel, commands=commands,

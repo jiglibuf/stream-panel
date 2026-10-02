@@ -53,7 +53,8 @@ SCENES = ["Dota 2", "Hearthstone", "WoW", "Just Chatting", "Рабочий ст�
 # Как в бою (§8.1), но интервалы короче — тест не должен ждать десятками секунд.
 REFRESH_INTERVAL = 0.5
 STALE_AFTER = 3.0
-METER_INTERVAL = 0.2
+# Сколько секунд уровень считается живым после события метроб InputVolumeMeters.
+METER_STALE_AFTER = 1.0
 
 # Сторож автостопа: столько секунд тест-эфир может жить, если тест завис.
 STREAM_BUDGET = 120.0
@@ -350,6 +351,47 @@ def drop_new_recordings(directory: pathlib.Path, before: set) -> list:
     return removed
 
 
+# ── живой уровень звука ──
+def read_sink_volume():
+    """Громкость дефолтного sink как доля (0..1+); None, если не прочитать."""
+    try:
+        out = subprocess.run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"],
+                             capture_output=True, text=True, timeout=5)
+        if out.returncode != 0:
+            return None
+        return float(out.stdout.split(":", 1)[1].split()[0])
+    except Exception:
+        return None
+
+
+def set_sink_volume(value: float) -> None:
+    """Выставить громкость дефолтного sink (в долях)."""
+    subprocess.run(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{value:.2f}"],
+                   capture_output=True, text=True, timeout=5, check=False)
+
+
+def make_tone(path: pathlib.Path) -> None:
+    """Короткий тихий тон 440 Гц (1.6 с) в tmp-каталог."""
+    subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.6",
+         "-ar", "48000", str(path)],
+        capture_output=True, timeout=30, check=True)
+
+
+async def sample_max_level(session, token, track: str, duration: float,
+                           step: float = 0.1):
+    """Наибольший уровень источника за окно наблюдения (None, если не было)."""
+    deadline = time.monotonic() + duration
+    best = None
+    while time.monotonic() < deadline:
+        state = await get_state(session, token)
+        level = state["audio"][track]["level"]
+        if isinstance(level, (int, float)) and (best is None or level > best):
+            best = level
+        await asyncio.sleep(step)
+    return best
+
+
 # ── сам тест ──
 async def test_live_panel_against_obs(tmp_path):
     launcher = ObsLauncher()
@@ -387,7 +429,7 @@ async def test_live_panel_against_obs(tmp_path):
 
         obs = Obs(host=host, port=port, password=password, retry_delay=0.2)
         panel = Panel(obs, refresh_interval=REFRESH_INTERVAL,
-                      stale_after=STALE_AFTER, meter_interval=METER_INTERVAL)
+                      stale_after=STALE_AFTER, meter_stale_after=METER_STALE_AFTER)
         commands = Commands(obs, panel)
         journal = Journal(tmp_path / "journal.jsonl")
         app = create_app(obs=obs, panel=panel, commands=commands, token=token,
@@ -417,6 +459,45 @@ async def test_live_panel_against_obs(tmp_path):
                 assert first["type"] == "state" and first["state"]["obs"] is True
                 print("WS первое сообщение: type=state, obs="
                       f"{first['state']['obs']}", flush=True)
+
+            # 0c. Живые уровни звука: оба источника — числа (не None), и уровень
+            # системы поднимается на коротком тихом тоне. Громкость sink на время
+            # тона опускаем и ОБЯЗАТЕЛЬНО возвращаем в finally.
+            await wait_state(session, token,
+                             lambda s: all(
+                                 isinstance(s["audio"][t]["level"], (int, float))
+                                 for t in ("mic", "sys")), 15,
+                             "уровни обоих источников — числа")
+            quiet = await get_state(session, token)
+            print("уровни до тона: mic=%r sys=%r" % (
+                quiet["audio"]["mic"]["level"],
+                quiet["audio"]["sys"]["level"]), flush=True)
+
+            sink_was = read_sink_volume()
+            tone = tmp_path / "tone.wav"
+            make_tone(tone)
+            loudest = None
+            try:
+                if sink_was is not None:
+                    set_sink_volume(0.15)
+                player = subprocess.Popen(
+                    ["pw-play", str(tone)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                try:
+                    loudest = await sample_max_level(session, token, "sys", 1.6)
+                finally:
+                    with contextlib.suppress(Exception):
+                        player.wait(timeout=10)
+            finally:
+                if sink_was is not None:
+                    set_sink_volume(sink_was)
+            during = await get_state(session, token)
+            print("уровень системы на тоне: max=%r, текущий=%r (громкость sink "
+                  "возвращена)" % (loudest, during["audio"]["sys"]["level"]),
+                  flush=True)
+            assert isinstance(loudest, (int, float)), loudest
+            assert loudest > quiet["audio"]["sys"]["level"], (
+                quiet["audio"]["sys"]["level"], loudest)
 
             # 1. Все девять сцен: команда, снапшот в ответе и повторное чтение.
             for name in SCENES:

@@ -22,6 +22,11 @@ SUBPROTOCOL = "obswebsocket.json"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4455
 
+# Какие события OBS шлём: биты 0..9 (1023, как раньше) плюс бит 16 — метры
+# уровня звука InputVolumeMeters. Отдельного запроса для метроб в obs-websocket
+# v5 нет, они приходят только этим событием.
+EVENT_SUBSCRIPTIONS = 1023 | (1 << 16)
+
 
 def compute_auth(password: str, salt: str, challenge: str) -> str:
     """Формула obs-websocket v5: base64(sha256(base64(sha256(pw+salt)) + challenge))."""
@@ -162,7 +167,8 @@ class Obs:
                                     data["authentication"]["salt"],
                                     data["authentication"]["challenge"])
             await ws.send(json.dumps({"op": 1, "d": {
-                "rpcVersion": 1, "authentication": auth, "eventSubscriptions": 1023}}))
+                "rpcVersion": 1, "authentication": auth,
+                "eventSubscriptions": EVENT_SUBSCRIPTIONS}}))
             reply = json.loads(await asyncio.wait_for(ws.recv(), timeout=self.request_timeout))
             if reply.get("op") != 2:
                 raise ConnectionError(f"рукопожатие не удалось: op={reply.get('op')}")
