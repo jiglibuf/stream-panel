@@ -33,6 +33,8 @@ SCENE_NUMS: dict[str, int] = {
 
 _TIMECODE_LEN = 11  # «ЧЧ:ММ:СС.мс» без последней доли
 _OFFLINE = "OBS офлайн"
+_EMPTY_STREAM = {"active": False, "time": "", "reconnect": False}
+_EMPTY_RECORD = {"active": False, "time": ""}
 
 
 def _timecode(value) -> str:
@@ -157,7 +159,9 @@ class Panel:
         try:
             data = await self.obs.req("GetStreamStatus")
         except Exception:
-            return {"active": False, "time": "", "reconnect": False}
+            # Отказ запроса — не повод объявлять «эфира нет»: во время эфира это
+            # заблокировало бы кнопку «Стоп эфира». Оставляем прежнее состояние.
+            return dict(self._snap.get("stream") or _EMPTY_STREAM)
         return {"active": bool(data.get("outputActive")),
                 "time": _timecode(data.get("outputTimecode")),
                 "reconnect": bool(data.get("outputReconnecting"))}
@@ -166,7 +170,7 @@ class Panel:
         try:
             data = await self.obs.req("GetRecordStatus")
         except Exception:
-            return {"active": False, "time": ""}
+            return dict(self._snap.get("record") or _EMPTY_RECORD)
         return {"active": bool(data.get("outputActive")),
                 "time": _timecode(data.get("outputTimecode"))}
 
@@ -223,8 +227,8 @@ class Panel:
             "error": None,
             "scene": None,
             "scenes": [],
-            "stream": {"active": False, "time": "", "reconnect": False},
-            "record": {"active": False, "time": ""},
+            "stream": dict(_EMPTY_STREAM),
+            "record": dict(_EMPTY_RECORD),
             "replay": False,
             "audio": {"mic": {"mute": None, "vol": None, "level": None},
                       "sys": {"mute": None, "vol": None, "level": None}},

@@ -95,6 +95,44 @@ async def test_replay_refusal_keeps_rest_of_snapshot():
     assert snap["audio"]["mic"]["vol"] == 50
 
 
+# ── 3б. отказ транспорта не выдумывает «эфира нет» ──
+
+async def test_transport_refusal_keeps_last_known_state():
+    """Кнопка «Стоп эфира» не должна блокироваться из-за одного отказа запроса."""
+    fake = FakeObs(responses={
+        "GetSceneList": scene_list("Dota 2", "Dota 2"),
+        "GetStreamStatus": {"outputActive": True, "outputTimecode": "00:10:00.000",
+                            "outputReconnecting": True},
+        "GetRecordStatus": {"outputActive": True, "outputTimecode": "00:01:00.000"},
+    })
+    panel = panel_for(fake)
+    fresh = await panel.refresh()
+    assert fresh["stream"]["active"] is True
+    assert fresh["record"]["active"] is True
+
+    fake.failures.add("GetStreamStatus")
+    fake.failures.add("GetRecordStatus")
+    snap = await panel.refresh()
+
+    assert snap["obs"] is True
+    assert snap["stream"]["active"] is True
+    assert snap["stream"]["time"] == "00:10:00.00"
+    assert snap["stream"]["reconnect"] is True
+    assert snap["record"]["active"] is True
+    assert snap["record"]["time"] == "00:01:00.00"
+
+
+async def test_transport_refusal_on_first_refresh_is_empty_state():
+    """Первый же опрос отказал — показываем «не идёт», а не выдуманное время."""
+    fake = FakeObs(responses={"GetSceneList": scene_list("Dota 2", "Dota 2")},
+                   failures={"GetStreamStatus", "GetRecordStatus"})
+    snap = await panel_for(fake).refresh()
+
+    assert snap["obs"] is True
+    assert snap["stream"] == {"active": False, "time": "", "reconnect": False}
+    assert snap["record"] == {"active": False, "time": ""}
+
+
 # ── 4. отказ одного аудио-источника ──
 
 async def test_audio_source_refusal_nulls_only_that_channel():
