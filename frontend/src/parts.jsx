@@ -23,6 +23,17 @@ export function HoldButton({ label, note, disabled, onConfirm }) {
   }
   useEffect(() => cancelFrame, [])
 
+  // Кнопка стала недоступной (идёт эфир, нет связи) — заливку убираем: иначе
+  // кнопка остаётся зелёной и выглядит, будто её всё ещё держат.
+  useEffect(() => {
+    if (disabled) {
+      cancelFrame()
+      doneRef.current = false
+      setProgress(0)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disabled])
+
   const tick = () => {
     if (disabledRef.current) {
       cancelFrame()
@@ -33,7 +44,9 @@ export function HoldButton({ label, note, disabled, onConfirm }) {
     if (status === HOLD_DONE) {
       cancelFrame()
       doneRef.current = true
-      setProgress(1)
+      // Команда ушла — заливку снимаем сразу: подтверждение даёт вибрация и
+      // смена состояния от OBS. Иначе кнопка висит залитой до следующего нажатия.
+      setProgress(0)
       onConfirm()
       return
     }
