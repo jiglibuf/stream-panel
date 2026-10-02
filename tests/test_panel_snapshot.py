@@ -56,6 +56,25 @@ async def test_active_scene_missing_from_list_is_allowed():
     assert snap["obs"] is True
 
 
+async def test_duplicate_scene_names_are_collapsed():
+    """Дубль в ответе OBS не должен превращаться в две плитки с одним номером."""
+    fake = FakeObs(responses={"GetSceneList": scene_list("Dota 2", "Dota 2", "WoW", "Dota 2")})
+    snap = await panel_for(fake).refresh()
+
+    assert [s["name"] for s in snap["scenes"]] == ["Dota 2", "WoW"]
+    assert [s["num"] for s in snap["scenes"]] == [1, 3]
+
+
+def test_defaults_follow_tz_intervals():
+    """ТЗ §8.1: порог устаревания — не меньше двух интервалов полного ресинка."""
+    panel = Panel(FakeObs())
+
+    assert panel.refresh_interval == 2.0
+    assert panel.stale_after == 10.0
+    assert panel.meter_interval < panel.refresh_interval
+    assert panel.stale_after >= 2 * panel.refresh_interval
+
+
 # ── 2. таймкоды и громкость ──
 
 async def test_timecodes_truncated_and_volume_as_percent():

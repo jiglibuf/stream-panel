@@ -36,6 +36,12 @@ _OFFLINE = "OBS офлайн"
 _EMPTY_STREAM = {"active": False, "time": "", "reconnect": False}
 _EMPTY_RECORD = {"active": False, "time": ""}
 
+# Интервалы по умолчанию (ТЗ §8.1): полный ресинк каждые 2 с, порог устаревания —
+# 10 с. Равные значения заставляли бы stale мигать ровно на границе опроса.
+DEFAULT_REFRESH_INTERVAL = 2.0
+DEFAULT_STALE_AFTER = 10.0
+DEFAULT_METER_INTERVAL = 0.2
+
 
 def _timecode(value) -> str:
     return str(value or "")[:_TIMECODE_LEN]
@@ -60,8 +66,10 @@ class Panel:
     """
 
     def __init__(self, obs, *, scene_nums=None, mic: str = MIC, sys: str = SYS,
-                 stale_after: float = 5.0, meter_interval: float = 0.2,
-                 refresh_interval: float = 5.0, clock=time.monotonic):
+                 stale_after: float = DEFAULT_STALE_AFTER,
+                 meter_interval: float = DEFAULT_METER_INTERVAL,
+                 refresh_interval: float = DEFAULT_REFRESH_INTERVAL,
+                 clock=time.monotonic):
         self.obs = obs
         self.scene_nums = dict(scene_nums) if scene_nums is not None else dict(SCENE_NUMS)
         self.mic = mic
@@ -211,8 +219,11 @@ class Panel:
             num = self.scene_nums.get(name)
             return (num is None, num if num is not None else 0, name)
 
+        # Имена уникальны в OBS, но дубликат в ответе не должен превращаться в две
+        # плитки (визуальный «двойник» сцены с тем же номером).
+        unique = list(dict.fromkeys(names))
         return [{"name": name, "num": self.scene_nums.get(name)}
-                for name in sorted(names, key=key)]
+                for name in sorted(unique, key=key)]
 
     def _store(self, snap: dict, now: float) -> None:
         snap["updated_at"] = now
