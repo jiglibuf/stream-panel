@@ -10,6 +10,7 @@ frontend/dist/
 /config.json
 /journal.jsonl*
 /sounds/
+/run/
 
 # ТЗ живёт вне репозитория (конвенция проекта)
 docs/TZ-*.md
