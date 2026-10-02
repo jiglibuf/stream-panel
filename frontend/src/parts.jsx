@@ -56,13 +56,18 @@ export function HoldButton({ label, note, disabled, onConfirm }) {
     if (!doneRef.current) setProgress(0) // порог не пройден — отмена, команды нет
   }
 
+  // Длинный тап на планшете не должен открывать системное меню («поделиться»,
+  // «печать») — иначе оно перехватывает удержание. Гасим и contextmenu, и
+  // совместимые события мыши: активация всё равно идёт по pointerup.
   return (
     <button
       type="button"
       className="btn btn--hold"
       disabled={disabled}
       aria-label={note ? `${label}. ${note}` : label}
+      onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => {
+        event.preventDefault()
         try {
           event.currentTarget.setPointerCapture(event.pointerId)
         } catch {
