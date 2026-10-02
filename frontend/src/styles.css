@@ -39,6 +39,20 @@ body {
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
+  /* Планшет: длинный тап не должен выделять текст и поднимать меню браузера
+     («поделиться», «печать») — оно перебивало удержание кнопок. */
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Поля ввода остаются обычными: в поле токена длинный тап нужен для вставки. */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  touch-action: auto;
 }
 
 h1,

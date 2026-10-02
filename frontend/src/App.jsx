@@ -110,7 +110,15 @@ export default function App() {
   const avail = availability(state)
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      onContextMenu={(event) => {
+        // Длинный тап по панели не поднимает меню браузера; в поле ввода
+        // оставляем как есть — там через него вставляют токен.
+        const tag = (event.target.tagName || '').toLowerCase()
+        if (tag !== 'input' && tag !== 'textarea') event.preventDefault()
+      }}
+    >
       <Header
         snap={state}
         link={link}
