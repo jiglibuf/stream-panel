@@ -22,6 +22,7 @@ import json
 import logging
 import pathlib
 import secrets
+import time
 
 from aiohttp import WSMsgType, web
 
@@ -48,6 +49,37 @@ _STUB_HTML = (
 )
 
 _log = logging.getLogger("panel.http")
+_journal_log = logging.getLogger("panel.journal")
+
+
+async def _record(journal, **fields) -> None:
+    """Записать событие в журнал; сбой журнала не должен ломать ответ клиенту."""
+    if journal is None:
+        return
+    try:
+        await journal.write(journal.entry(**fields))
+    except Exception:
+        _journal_log.exception("не удалось записать в журнал: %s", fields.get("action"))
+
+
+def _duration_ms(started: float) -> int:
+    """Длительность операции в целых миллисекундах."""
+    return int((time.monotonic() - started) * 1000)
+
+
+def _journal_result(envelope: dict):
+    """Разложить конверт команды на (result, error, changed, extra) для журнала.
+
+    result: `ok` — команда что-то изменила, `noop` — выполнена без изменений,
+    `error` — OBS/выполнение вернули отказ (ok: false). `steps` — шаги «Паники».
+    """
+    changed = list(envelope.get("changed") or [])
+    extra = {}
+    if "steps" in envelope:
+        extra["steps"] = envelope["steps"]
+    if not envelope.get("ok"):
+        return "error", envelope.get("error"), changed, extra
+    return ("ok" if changed else "noop"), envelope.get("error"), changed, extra
 
 
 # ── allowlist ──
@@ -100,16 +132,26 @@ def _supplied_token(request, path: str) -> str | None:
     return _bearer(request)
 
 
-def make_guard(token: str):
-    """Middleware доступа: allowlist (403), затем токен (401)."""
+def make_guard(token: str, journal=None):
+    """Middleware доступа (F6) с записью отказов в журнал.
+
+    Отказы доступа тоже попадают в журнал (`action: "auth"`): `denied` — нет
+    верного токена (401), `foreign` — адрес вне allowlist (403). Пишем только
+    адрес клиента и путь БЕЗ query-строки: в query у `/ws` едет токен, которого
+    в журнале быть не должно.
+    """
 
     @web.middleware
     async def guard(request, handler):
         if not is_allowed(request.remote):
+            await _record(journal, action="auth", result="foreign",
+                          source=request.remote, path=request.path)
             return _error(403, "адрес клиента не в списке разрешённых")
         path = request.path
         if path == "/ws" or path.startswith("/api/"):
             if not _token_equal(_supplied_token(request, path), token):
+                await _record(journal, action="auth", result="denied",
+                              source=request.remote, path=path)
                 if path == "/ws":
                     return web.Response(status=401, text="требуется токен")
                 return _error(401, "требуется токен")
@@ -204,6 +246,7 @@ PANEL_KEY = web.AppKey("panel", object)
 COMMANDS_KEY = web.AppKey("commands", object)
 TOKEN_KEY = web.AppKey("token", str)
 CONFIG_PATH_KEY = web.AppKey("config_path", object)
+JOURNAL_KEY = web.AppKey("journal", object)
 
 
 # ── статика фронта ──
@@ -225,15 +268,19 @@ def _safe_file(frontend_dir: pathlib.Path, tail: str):
 
 
 def create_app(*, obs, panel, commands, token: str, config_path=None,
-               frontend_dir=None, push_interval: float = 0.2) -> web.Application:
-    """Собрать HTTP-приложение пульта. Все зависимости внедряются."""
+               frontend_dir=None, push_interval: float = 0.2, journal=None) -> web.Application:
+    """Собрать HTTP-приложение пульта. Все зависимости внедряются.
+
+    `journal` необязателен: без него слой работает как раньше, без записей в
+    журнал. Сбой самого журнала не влияет на ответы клиенту.
+    """
     if frontend_dir is None:
         frontend_dir = DEFAULT_FRONTEND_DIR
     frontend_dir = pathlib.Path(frontend_dir).resolve()
 
     hub = WsHub(panel, push_interval)
     app = web.Application(
-        middlewares=[make_guard(token)],
+        middlewares=[make_guard(token, journal)],
         logger=logging.getLogger("panel.app"),
         # Дефолтный access-лог пишет строку запроса целиком (там ?token=) —
         # выключаем его на уровне Server, не трогая логирование приложения.
@@ -244,12 +291,14 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
     app[COMMANDS_KEY] = commands
     app[TOKEN_KEY] = token
     app[CONFIG_PATH_KEY] = config_path
+    app[JOURNAL_KEY] = journal
 
     # ── обработчики ──
     async def state_handler(request):
         return web.json_response(panel.state)
 
     async def cmd_handler(request):
+        started = time.monotonic()
         try:
             raw = await request.text()
             body = json.loads(raw) if raw.strip() else None
@@ -266,7 +315,19 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
         try:
             envelope = await commands.execute(name, args)
         except CommandError as exc:
-            return _error(getattr(exc, "code", 400), str(exc))
+            code = getattr(exc, "code", 400)
+            await _record(journal, action=name,
+                          result="refused" if code == 409 else "error",
+                          source=request.remote, path=request.path,
+                          duration_ms=_duration_ms(started), changed=[],
+                          error=str(exc) or exc.__class__.__name__)
+            return _error(code, str(exc))
+        # После любой выполненной команды — одна запись: результат, клиент,
+        # длительность и (у «Паники») шаги. Токен сюда не попадает.
+        result, error, changed, extra = _journal_result(envelope)
+        await _record(journal, action=name, result=result, source=request.remote,
+                      path=request.path, duration_ms=_duration_ms(started),
+                      changed=changed, error=error, **extra)
         # Успешная команда — немедленная рассылка свежего снапшота всем клиентам.
         await hub.broadcast(envelope.get("state"))
         return web.json_response(envelope)
