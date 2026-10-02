@@ -142,22 +142,38 @@ class FakeProc:
 
 
 class FakeObs:
-    """Стаб клиента OBS для тестов Panel: записывает вызовы, отдаёт заданные ответы."""
+    """Стаб клиента OBS для тестов Panel: записывает вызовы, отдаёт заданные ответы.
+
+    responses: {requestType: dict | callable}. dict — готовый responseData;
+        callable(**data) -> dict — чтобы ответ зависел от аргументов запроса
+        (например, от inputName у GetInputMute/GetInputVolume).
+    failures: элементы — либо request-type (строка), либо пара
+        (request-type, inputName); на таких вызовах req() поднимает RuntimeError.
+    """
 
     def __init__(self, responses: dict | None = None, connected: bool = True,
-                 failures: set[str] | None = None):
+                 failures: set | None = None):
         self.responses = responses or {}
         self.connected = connected
         self.failures = failures or set()
         self.calls: list[tuple[str, dict]] = []
 
+    def fails(self, request_type: str, data: dict) -> bool:
+        if request_type in self.failures:
+            return True
+        name = data.get("inputName")
+        return name is not None and (request_type, name) in self.failures
+
     async def req(self, request_type: str, **data):
         self.calls.append((request_type, data))
-        if request_type in self.failures:
+        if self.fails(request_type, data):
             raise RuntimeError(f"OBS отказал: {request_type}")
         if not self.connected:
             raise RuntimeError("OBS офлайн")
-        return self.responses.get(request_type, {})
+        response = self.responses.get(request_type, {})
+        if callable(response):
+            response = response(**data)
+        return response
 
     def called(self, request_type: str) -> list[dict]:
         return [d for r, d in self.calls if r == request_type]
