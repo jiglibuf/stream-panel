@@ -68,7 +68,6 @@ class Commands:
         self.obs = obs
         self.panel = panel
         self.black_scene = black_scene
-        self._last_data: dict | None = None  # последний ответ OBS (для GetInputMute)
 
     async def execute(self, name: str, args: dict | None = None) -> dict:
         """Выполнить команду и вернуть конверт; отказы — исключениями.
@@ -150,7 +149,7 @@ class Commands:
         known = {s.get("name") for s in (self.panel.state.get("scenes") or [])}
         if name not in known:
             raise CommandError(f"scene.set: сцены {name!r} нет в списке")
-        error = await self._send("SetCurrentProgramScene", sceneName=name)
+        _, error = await self._send("SetCurrentProgramScene", sceneName=name)
         if error is not None:
             return self._failed("scene.set", error)
         return await self._success("scene.set", ["scene"])
@@ -161,7 +160,7 @@ class Commands:
         self._guard_stale()
         if bool((self.panel.state.get("stream") or {}).get("active")):
             return self._noop("stream.start")
-        error = await self._send("StartStream")
+        _, error = await self._send("StartStream")
         if error is not None:
             return self._failed("stream.start", error)
         return await self._success("stream.start", ["stream"])
@@ -172,7 +171,7 @@ class Commands:
         self._guard_stale()
         if not bool((self.panel.state.get("stream") or {}).get("active")):
             return self._noop("stream.stop")
-        error = await self._send("StopStream")
+        _, error = await self._send("StopStream")
         if error is not None:
             return self._failed("stream.stop", error)
         return await self._success("stream.stop", ["stream"])
@@ -180,7 +179,7 @@ class Commands:
     async def _record_toggle(self, args: dict) -> dict:
         self._guard_stale()
         active = bool((self.panel.state.get("record") or {}).get("active"))
-        error = await self._send("StopRecord" if active else "StartRecord")
+        _, error = await self._send("StopRecord" if active else "StartRecord")
         if error is not None:
             return self._failed("record.toggle", error)
         return await self._success("record.toggle", ["record"])
@@ -189,7 +188,7 @@ class Commands:
         self._guard_stale()
         if not self.panel.state.get("replay"):
             raise RefusedError("replay.save: буфер повтора выключен")
-        error = await self._send("SaveReplayBuffer")
+        _, error = await self._send("SaveReplayBuffer")
         if error is not None:
             return self._failed("replay.save", error)
         return await self._success("replay.save", ["replay"])
@@ -197,11 +196,11 @@ class Commands:
     async def _audio_toggle_mute(self, args: dict) -> dict:
         key = args["track"]
         name = self._input_name(key)
-        error = await self._send("GetInputMute", inputName=name)
+        answer, error = await self._send("GetInputMute", inputName=name)
         if error is not None:
             return self._failed("audio.toggleMute", error)
-        muted = bool((self._last_data or {}).get("inputMuted"))
-        error = await self._send("SetInputMute", inputName=name, inputMuted=not muted)
+        muted = bool((answer or {}).get("inputMuted"))
+        _, error = await self._send("SetInputMute", inputName=name, inputMuted=not muted)
         if error is not None:
             return self._failed("audio.toggleMute", error)
         return await self._success("audio.toggleMute", [f"audio.{key}"])
@@ -209,7 +208,7 @@ class Commands:
     async def _audio_set_volume(self, args: dict) -> dict:
         key = args["track"]
         name = self._input_name(key)
-        error = await self._send("SetInputVolume", inputName=name,
+        _, error = await self._send("SetInputVolume", inputName=name,
                                  inputVolumeMul=args["value"] / 100.0)
         if error is not None:
             return self._failed("audio.setVolume", error)
@@ -232,17 +231,21 @@ class Commands:
 
     # ── выполнение запроса к OBS ──
     async def _send(self, request_type: str, **data):
-        """Дёрнуть OBS; вернуть None при успехе или текст ошибки при отказе."""
+        """Дёрнуть OBS: при успехе — (ответ, None), при отказе — (None, текст).
+
+        Ответ возвращается вызывающему, а не хранится в поле объекта: команды
+        может запускать параллельно HTTP-слой, и общий атрибут сломается на первом
+        же добавленном между чтением и использованием `await` (например, записи в
+        журнал). Локальное значение такой возможности не оставляет.
+        """
         try:
-            self._last_data = await self.obs.req(request_type, **data)
-        except Exception as exc:  # таймаут/обрыв/отказ OBS — это провал команды
-            self._last_data = None
-            return str(exc) or exc.__class__.__name__
-        return None
+            return await self.obs.req(request_type, **data), None
+        except Exception as exc:  # таймаут/обрыв/отказ OBS — провал команды
+            return None, str(exc) or exc.__class__.__name__
 
     async def _step(self, request_type: str, **data):
         """Шаг «Паники»: True либо текст ошибки — без исключений наружу."""
-        error = await self._send(request_type, **data)
+        _, error = await self._send(request_type, **data)
         return True if error is None else error
 
     # ── сборка конверта ──

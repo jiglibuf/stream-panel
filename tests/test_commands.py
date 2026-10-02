@@ -148,7 +148,7 @@ async def test_06_record_toggle_follows_obs_state():
 async def test_07_stale_refuses_destructive_but_allows_safe():
     clock = Clock(1000.0)
     fake, _, cmds = await rig(clock=clock)
-    clock.t += 6.0  # больше stale_after (5.0)
+    clock.t += cmds.panel.stale_after + 1.0  # заведомо больше порога устаревания
     fake.calls.clear()
 
     with pytest.raises(RefusedError):
@@ -158,11 +158,11 @@ async def test_07_stale_refuses_destructive_but_allows_safe():
     res = await run(cmds.execute("audio.toggleMute", {"track": "mic"}))
     assert res["ok"] is True
 
-    clock.t += 6.0  # успешная команда отрефрешила; снова устареваем
+    clock.t += cmds.panel.stale_after + 1.0  # успешная команда отрефрешила; снова устареваем
     res2 = await run(cmds.execute("scene.set", {"name": "WoW"}))
     assert res2["ok"] is True
 
-    clock.t += 6.0
+    clock.t += cmds.panel.stale_after + 1.0
     with pytest.raises(RefusedError):
         await run(cmds.execute("stream.start", {"confirm": True}))  # stale гасит и его
 
