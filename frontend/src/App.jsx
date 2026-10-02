@@ -115,8 +115,6 @@ export default function App() {
         snap={state}
         link={link}
         rtt={rtt}
-        onRecord={() => run('record.toggle')}
-        recordDisabled={!avail.record}
       />
       <Banners snap={state} notice={notice} onDismiss={() => setNotice(null)} />
       <main className="board">

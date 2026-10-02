@@ -92,8 +92,10 @@ async def test_cmd_garbage_bodies_400_not_500():
                               headers=auth())).status == 400
 
 
-async def test_index_stub_without_token_and_without_secret():
-    app, obs, panel = await make_stack()
+async def test_index_stub_without_token_and_without_secret(tmp_path):
+    """Без сборки фронта отдаётся заглушка (сборка лежит в frontend/dist и в git не едет)."""
+    no_build = tmp_path / "нет-сборки"
+    app, obs, panel = await make_stack(frontend_dir=no_build)
     async with running(app) as cl:
         resp = await cl.get("/")
         assert resp.status == 200

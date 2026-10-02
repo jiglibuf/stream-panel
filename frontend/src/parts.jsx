@@ -180,6 +180,7 @@ export function AudioTrack({ label, channel, muteDisabled, volumeDisabled, onTog
         max="100"
         step="1"
         value={shown}
+        style={{ '--vol': `${shown}%` }}
         disabled={volumeDisabled}
         aria-label={`громкость: ${label}`}
         onPointerDown={() => remember(volume)}
@@ -239,7 +240,7 @@ export function ConnectionBadge({ link, rtt }) {
   )
 }
 
-export function Header({ snap, link, rtt, onRecord, recordDisabled }) {
+export function Header({ snap, link, rtt }) {
   const stream = snap.stream || {}
   const record = snap.record || {}
   return (
@@ -254,12 +255,14 @@ export function Header({ snap, link, rtt, onRecord, recordDisabled }) {
       </div>
       <ConnectionBadge link={link} rtt={rtt} />
       <div className="header__block header__block--end">
-        <button type="button" className={`record ${record.active ? 'is-on' : ''}`} disabled={recordDisabled}
-          onClick={onRecord} aria-label={record.active ? 'остановить запись' : 'начать запись'}>
+        {/* Индикатор записи: команду отдаёт кнопка в блоке транспорта, чтобы
+            не было двух точек входа в одно действие. */}
+        <span className={`record ${record.active ? 'is-on' : ''}`} role="status"
+          aria-label={record.active ? 'идёт запись' : 'запись остановлена'}>
           <span className="record__dot" aria-hidden="true" />
-          <span className="record__label">{record.active ? 'СТОП' : 'ЗАПИСЬ'}</span>
+          <span className="record__label">{record.active ? 'ЗАПИСЬ' : 'НЕ ПИШЕТ'}</span>
           <span className="timer timer--small">{formatTimecode(record.time)}</span>
-        </button>
+        </span>
       </div>
     </header>
   )

@@ -106,10 +106,17 @@ p {
 /* ── шапка ── */
 .header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: stretch;
   gap: 8px;
   min-height: 88px;
+}
+
+/* Бейдж связи держится своей ширины по центру свободного места: колонки по
+   краям сжимаются по содержимому, поэтому в шапке нет пустых «коробок». */
+.header > .link {
+  justify-self: center;
+  align-self: center;
 }
 
 .header__block {
@@ -508,7 +515,9 @@ p {
 .slider::-webkit-slider-runnable-track {
   height: 14px;
   border-radius: 999px;
-  background: var(--panel-3);
+  /* Заливка до текущего значения (--vol из разметки): на планшете видно,
+     насколько поднята громкость, а не только цифру процентов. */
+  background: linear-gradient(90deg, var(--accent) var(--vol, 0%), var(--panel-3) 0);
 }
 
 .slider::-webkit-slider-thumb {
@@ -524,7 +533,7 @@ p {
 .slider::-moz-range-track {
   height: 14px;
   border-radius: 999px;
-  background: var(--panel-3);
+  background: linear-gradient(90deg, var(--accent) var(--vol, 0%), var(--panel-3) 0);
 }
 
 .slider::-moz-range-thumb {
