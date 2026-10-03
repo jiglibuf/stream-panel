@@ -49,6 +49,31 @@ scripts/run.sh --stop
 Останов идемпотентен: если сервис не запущен, скрипт просто сообщит об этом. Сначала посылается
 `SIGTERM`, при отказе завершиться — `SIGKILL`; чужие процессы не затрагиваются.
 
+## Автозапуск после перезагрузки
+
+`scripts/run.sh` живёт, пока машина не перезагрузится. Чтобы пульт поднимался сам (и возвращался
+при падении), он ставится службой пользователя:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/stream-panel.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now stream-panel
+sudo loginctl enable-linger "$USER"   # старт даже без входа в систему
+```
+
+Проверка, журнал и отключение обратно на ручной запуск:
+
+```bash
+systemctl --user status stream-panel
+journalctl --user -u stream-panel -n 20
+systemctl --user disable --now stream-panel
+```
+
+Служба и `scripts/run.sh` делают одно и то же — держать оба сразу не нужно, порт 8090 один.
+Если после ребута на планшете `502` — значит служба не поднялась: смотреть
+`systemctl --user status stream-panel`.
+
 ## Токен доступа
 
 Сервис пускает только клиентов из приватных сетей и tailnet и требует токен. Токен —
