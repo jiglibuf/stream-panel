@@ -577,6 +577,204 @@ p {
   background: linear-gradient(90deg, var(--warn), var(--danger));
 }
 
+/* ── блок «Звук»: режим и устройство ── */
+
+/* Левая колонка: транспорт сверху, под ним блок звука. На 1024×768 по высоте
+   всё не помещается, поэтому скроллится колонка целиком, а не отдельные блоки:
+   кнопки транспорта остаются целыми и не сжимаются. */
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.column--left {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.column--left > .panel {
+  flex: 0 0 auto;
+}
+
+/* Транспорт — в две колонки: на 1024×768 пять кнопок в столбик вытесняли блок
+   звука ниже сгиба, и переключатель режимов приходилось искать прокруткой.
+   Кнопки те же, поведение то же, высота панели — вдвое меньше. */
+.panel--transport .panel__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+}
+
+.modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 88px;
+  min-width: 88px;
+  padding: 8px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.mode:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.mode.is-active {
+  border-color: var(--ok);
+  background: linear-gradient(180deg, rgba(53, 196, 107, 0.22), rgba(53, 196, 107, 0.08));
+}
+
+.mode__label {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.mode__hint {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.mix__note {
+  font-size: 0.78rem;
+  color: var(--warn);
+}
+
+.mix__status {
+  font-size: 0.82rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.devices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.devices__empty {
+  padding: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Строка устройства — цель касания как у кнопок: не меньше 88 px по высоте. */
+.device {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 88px;
+  padding: 8px 12px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.device:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.device.is-chosen {
+  border-color: var(--ok);
+  background: rgba(53, 196, 107, 0.1);
+}
+
+/* Кружок как у «radio»: видно, что выбран ровно один вариант. */
+.device__label::before {
+  content: '○ ';
+  color: var(--muted);
+}
+
+.device.is-chosen .device__label::before {
+  content: '● ';
+  color: var(--ok);
+}
+
+.device__label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.device__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.device__badge {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.device__badge--chosen {
+  border-color: rgba(53, 196, 107, 0.5);
+  color: #8fe0ac;
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(229, 72, 77, 0.5);
+  border-radius: 12px;
+  background: rgba(229, 72, 77, 0.12);
+}
+
+.confirm__text {
+  font-weight: 600;
+  color: #ff9a9e;
+  overflow-wrap: anywhere;
+}
+
+.confirm__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.issues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.issues__item {
+  font-size: 0.82rem;
+  color: #ffc266;
+  overflow-wrap: anywhere;
+}
+
 /* ── экран ввода токена ── */
 .gate {
   display: flex;

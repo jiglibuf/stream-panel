@@ -40,6 +40,52 @@ export async function fetchState(token, store) {
   }
 }
 
+// GET /api/audio — состояние звука: режим, устройства, проблемы. Отдельного
+// WS-канала для звука нет, поэтому это же состояние берётся опросом.
+export async function fetchAudio(token, store) {
+  let response
+  try {
+    response = await fetch('/api/audio', { headers: authHeaders(token) })
+  } catch {
+    return { offline: true }
+  }
+  if (applyAuthStatus(response.status, store)) return { unauthorized: true }
+  if (!response.ok) return { offline: true, error: `HTTP ${response.status}` }
+  try {
+    return { audio: await response.json() }
+  } catch {
+    return { offline: true, error: 'ответ не является JSON' }
+  }
+}
+
+// POST /api/audio/mode | /api/audio/device — конверт как у /api/cmd:
+// {ok, name, changed, state, steps, error}. 409 (эфир без подтверждения) и
+// 400 (неизвестный режим) приходят с сообщением сервера в error.
+export async function sendAudio(token, action, body, store) {
+  let response
+  try {
+    response = await fetch(`/api/audio/${action}`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    })
+  } catch {
+    return { ok: false, offline: true, error: 'нет связи с сервисом' }
+  }
+  if (applyAuthStatus(response.status, store)) return { unauthorized: true }
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: payload?.error ?? `HTTP ${response.status}` }
+  }
+  return payload ?? { ok: false, error: 'пустой ответ сервиса' }
+}
+
 // POST /api/cmd — конверт {ok, name, changed, state, error} (+ steps у паники).
 export async function sendCommand(token, name, args, store) {
   let response
