@@ -15,6 +15,7 @@ import {
   sortDevices,
   statusLine,
   DEVICES_EMPTY_TEXT,
+  AUDIO_OBS_OFFLINE_HINT,
 } from './audio.js'
 import { holdResult, HOLD_DONE } from './hold.js'
 import { formatTimecode } from './timecode.js'
@@ -315,7 +316,7 @@ export function AudioMixPanel({
       </div>
 
       {obsOffline && (
-        <p className="mix__note">OBS офлайн — переключение режима недоступно</p>
+        <p className="mix__note">{AUDIO_OBS_OFFLINE_HINT}</p>
       )}
 
       {confirm && (

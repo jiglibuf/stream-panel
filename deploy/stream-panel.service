@@ -9,6 +9,10 @@ Type=simple
 WorkingDirectory=%h/obs-panel
 # Токен и журнал сервис берёт из каталога репозитория (config.json — 0600,
 # в .gitignore). Наружу ничего лишнего не печатается.
+# XDG_RUNTIME_DIR и PULSE_SERVER обязательны: без них pactl/pw-dump внутри службы
+# не находят PipeWire и вкладка «Звук» показывает пустой список устройств.
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PULSE_SERVER=unix:%t/pulse/native
 ExecStart=%h/obs-panel/.venv/bin/python -m server
 Restart=on-failure
 RestartSec=2

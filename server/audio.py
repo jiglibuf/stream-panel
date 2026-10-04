@@ -105,5 +105,7 @@ def mode_issues(mode, service, virtual_present: bool) -> list[str]:
 
 def collect_issues(mode, service, loops, chosen, names) -> list[str]:
     """Полный список человеческих проблем для владельца (пусто, если всё хорошо)."""
-    virtual_present = any(classify(n) == VIRTUAL for n in (names or []))
+    # В обычном режиме «лишними» считаются только НАШИ миксы: easyeffects_sink живёт
+    # в системе всегда и к разделению звука для эфира отношения не имеет.
+    virtual_present = any(name in MIX_SINKS for name in (names or []))
     return loop_issues(loops, chosen) + mode_issues(mode, service, virtual_present)

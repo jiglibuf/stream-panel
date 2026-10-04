@@ -66,7 +66,11 @@ class SystemAudio:
     # ── окружение и запуск ──
     def _env(self) -> dict:
         env = dict(os.environ)
-        env.setdefault("LANG", "C")
+        # Локаль обязательно C: pactl печатает поля на языке локали («Имя:»,
+        # «Состояние:»), и разбор молча даёт пустой список устройств — в живом
+        # сервисе вкладка «Звук» показывала «устройства не найдены».
+        env["LC_ALL"] = "C"
+        env["LANG"] = "C"
         uid = os.getuid() if hasattr(os, "getuid") else 1000
         runtime = env.get("XDG_RUNTIME_DIR") or f"/run/user/{uid}"
         env["XDG_RUNTIME_DIR"] = runtime
@@ -111,38 +115,79 @@ class SystemAudio:
         for module_id in self._module_ids("module-null-sink", f"sink_name={name}"):
             self._run(["pactl", "unload-module", module_id], check=True)
 
-    # ── петли (связи портов) ──
-    def list_loops(self) -> list[dict]:
-        """Петли и их РЕАЛЬНЫЕ цели: не «модуль жив», а куда подключён выход петли.
+    # ── петли (аргументы модулей + связи портов) ──
+    def module_args(self, module_name: str) -> list[dict]:
+        """Аргументы каждого модуля с таким именем: {source:…, sink:…, …}.
 
-        Разбираем pw-dump: узлы, порты, связи. Входные связи узла `output.loopback`
-        ведут от монитора-источника, выходные — в устройство. Именно так ловится
-        баг «петля играет в два устройства».
+        Это ЗАЯВЛЕННОЕ петлёй: с чем её создали. Поля pactl английские только при
+        LC_ALL=C — за это отвечает _env().
+        """
+        out = self._run(["pactl", "list", "modules"])
+        found = []
+        for block in out.split("Module #")[1:]:
+            if f"Name: {module_name}" not in block:
+                continue
+            raw = re.search(r"^\s*Argument:\s*(.+)$", block, re.M)
+            args = {}
+            for pair in (raw.group(1).split() if raw else []):
+                key, sep, value = pair.partition("=")
+                if sep:
+                    args[key] = value.strip('"')
+            found.append(args)
+        return found
+
+    def loop_links(self) -> dict[str, list[str]]:
+        """Куда петли подключены ФИЗИЧЕСКИ (связи портов pw-dump): база → устройства.
+
+        Виртуальные узлы (easyeffects_sink и прочая обработка) пропускаем: это
+        промежуточная ступень, а не «звук пошёл в колонки». Нужно это ровно для
+        бага «петля играет сразу в два устройства».
         """
         try:
             data = json.loads(self._run(["pw-dump"]) or "[]")
         except ValueError:
-            return []
+            return {}
         nodes, links = {}, []
         for obj in data:
             kind = obj.get("type")
             info = obj.get("info") or {}
-            props = info.get("props") or {}
             if kind == "PipeWire:Interface:Node":
-                nodes[obj.get("id")] = props.get("node.name", "")
+                nodes[obj.get("id")] = (info.get("props") or {}).get("node.name", "")
             elif kind == "PipeWire:Interface:Link":
-                links.append(info)
-        loops = []
+                links.append((info.get("output-node-id"), info.get("input-node-id")))
+        by_base = {}
         for nid, name in nodes.items():
             if not name.startswith("output.loopback"):
                 continue
-            sources = [nodes.get(l.get("output-node-id"), "") for l in links
-                       if l.get("input-node-id") == nid]
-            targets = [nodes.get(l.get("input-node-id"), "") for l in links
-                       if l.get("output-node-id") == nid]
-            source = next((s for s in sources if s), f"loopback#{nid}")
-            loops.append({"source": source,
-                          "targets": [t for t in dict.fromkeys(targets) if t]})
+            feeds = [nodes.get(inp, "") for out, inp in links if out == nid]
+            physical = [f for f in dict.fromkeys(feeds)
+                        if f and classify(f) == PHYSICAL]
+            sources = [nodes.get(out, "") for out, inp in links if inp == nid]
+            source = next((s for s in sources if s), "")
+            if source:
+                base = source[:-len(".monitor")] if source.endswith(".monitor") else source
+                by_base[base] = list(dict.fromkeys(by_base.get(base, []) + physical))
+        return by_base
+
+    def list_loops(self) -> list[dict]:
+        """Петли и их РЕАЛЬНЫЕ цели.
+
+        Основа — аргументы module-loopback (source=/sink=): связь с источником и
+        заявленное устройство. Дополнительно подмешиваем физические связи портов:
+        если петля «прилипла» ещё к одному устройству, владелец услышит звук сразу
+        в двух местах, и такой случай обязан быть виден в списке проблем.
+        """
+        loops = []
+        for args in self.module_args("module-loopback"):
+            source = args.get("source", "")
+            if not source:
+                continue
+            targets = [args["sink"]] if args.get("sink") else []
+            loops.append({"source": source, "targets": targets})
+        for base, physical in self.loop_links().items():
+            for loop in loops:
+                if loop["source"].split(".monitor")[0] == base:
+                    loop["targets"] = list(dict.fromkeys(loop["targets"] + physical))
         return loops
 
     def create_loop(self, source: str, target: str) -> None:
@@ -346,11 +391,23 @@ class AudioController:
             raise RefusedError("идёт эфир — переключение прервёт звук")
         service = self.ops.service() or {}
         current = compute_mode(service.get("enabled"), service.get("active"))
-        if current == mode:
-            return self._noop()  # идемпотентно: режим уже такой
+        if current == mode and not self._mode_is_broken(mode, service):
+            return self._noop()  # идемпотентно: режим уже такой и он здоров
         if mode == STREAM:
             return await self._enable_stream()
         return await self._disable_stream()
+
+    def _mode_is_broken(self, mode, service) -> bool:
+        """Режим уже выставлен, но состояние нездорово: сторож не работает, петли
+        играют не туда или сразу в два места, в обычном режиме остались виртуальные
+        выходы. Тогда повторный тап по тому же режиму должен ПОЧИНИТЬ, а не молчать:
+        владелец жмёт «Стрим» именно в такой ситуации, и no-op выглядел бы как
+        «кнопка не работает». Идемпотентность ТЗ §3 — про здоровое состояние.
+        """
+        names = self._names()
+        chosen = choose_device(names, self.ops.read_device())
+        return bool(collect_issues(mode, service, self.ops.list_loops() or [],
+                                   chosen, names))
 
     async def _enable_stream(self) -> dict:
         """Порядок шагов ТЗ §4: device → sinks → loops → default → obs → watchdog → state."""
