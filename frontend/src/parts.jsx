@@ -3,6 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { vibrate } from './api.js'
+import {
+  MODE_NORMAL,
+  MODE_STREAM,
+  audioAvailability,
+  confirmText,
+  deviceLabel,
+  deviceStateText,
+  isModeActive,
+  issuesList,
+  sortDevices,
+  statusLine,
+  DEVICES_EMPTY_TEXT,
+} from './audio.js'
 import { holdResult, HOLD_DONE } from './hold.js'
 import { formatTimecode } from './timecode.js'
 import { vuLevel } from './vu.js'
@@ -241,6 +254,114 @@ export function AudioPanel({ snap, avail, onCommand }) {
           onVolume={(value) => onCommand('audio.setVolume', { track: 'sys', value })}
         />
       </div>
+    </section>
+  )
+}
+
+// Блок «Звук»: переключатель режимов и выбор устройства вывода. Состояние и
+// активный режим приходят от сервера; тут только показ и подтверждение при
+// живом эфире (переключение рвёт звук на несколько секунд).
+export function AudioMixPanel({
+  audio, online, busy, notice, pendingMode,
+  onSetMode, onConfirmMode, onCancelMode, onSetDevice, onDismissNotice,
+}) {
+  const avail = audioAvailability(audio, online)
+  const devices = sortDevices(audio && audio.devices)
+  const issues = issuesList(audio)
+  const confirm = pendingMode ? confirmText(audio) : null
+  const loading = online === null
+  const off = online === false
+  const obsOffline = online === true && !!audio && !!audio.obs && audio.obs.online !== true
+
+  const modeButton = (mode, label, hint) => (
+    <button
+      type="button"
+      data-mode={mode}
+      className={`mode ${isModeActive(audio, mode) ? 'is-active' : ''}`}
+      aria-pressed={isModeActive(audio, mode)}
+      disabled={!avail.mode || busy}
+      onClick={() => onSetMode(mode)}
+    >
+      <span className="mode__label">{label}</span>
+      <span className="mode__hint">{hint}</span>
+    </button>
+  )
+
+  return (
+    <section className="panel panel--mix" aria-label="Режим и устройство звука">
+      <h2 className="panel__title">
+        Звук: режим и устройство
+        <span className="panel__note">состояние — от службы</span>
+      </h2>
+
+      {(off || loading) && (
+        <div className={`banner banner--${off ? 'error' : 'warn'}`} role="status">
+          <span className="banner__text">
+            {off ? 'сервис не отвечает — элементы неактивны' : 'запрашиваем состояние звука…'}
+          </span>
+        </div>
+      )}
+
+      {notice && (
+        <div className="banner banner--warn" role="status">
+          <span className="banner__text">{notice}</span>
+          <button type="button" className="banner__close" onClick={onDismissNotice} aria-label="закрыть">×</button>
+        </div>
+      )}
+
+      <div className="modes" role="group" aria-label="Режим звука">
+        {modeButton(MODE_STREAM, 'Стрим', 'выходы и петли')}
+        {modeButton(MODE_NORMAL, 'Обычный', 'прямой вывод')}
+      </div>
+
+      {obsOffline && (
+        <p className="mix__note">OBS офлайн — переключение режима недоступно</p>
+      )}
+
+      {confirm && (
+        <div className="confirm" role="alertdialog" aria-label="подтверждение переключения звука">
+          <p className="confirm__text">{confirm}</p>
+          <div className="confirm__actions">
+            <button type="button" className="btn btn--danger" disabled={busy} onClick={onConfirmMode}>
+              Переключить
+            </button>
+            <button type="button" className="btn" disabled={busy} onClick={onCancelMode}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="devices" role="radiogroup" aria-label="Устройство вывода">
+        {devices.map((device) => (
+          <button
+            key={device.name}
+            type="button"
+            role="radio"
+            data-device={device.name}
+            aria-checked={device.is_chosen === true}
+            className={`device ${device.is_chosen ? 'is-chosen' : ''}`}
+            disabled={!avail.device || busy}
+            onClick={() => onSetDevice(device.name)}
+          >
+            <span className="device__label">{deviceLabel(device)}</span>
+            <span className="device__meta">
+              <span className="device__state">{deviceStateText(device.state)}</span>
+              {device.is_default && <span className="device__badge">по умолчанию</span>}
+              {device.is_chosen && <span className="device__badge device__badge--chosen">выбрано</span>}
+            </span>
+          </button>
+        ))}
+        {devices.length === 0 && <p className="devices__empty">{DEVICES_EMPTY_TEXT}</p>}
+      </div>
+
+      <p className="mix__status">{statusLine(audio)}</p>
+
+      {issues.length > 0 && (
+        <ul className="issues">
+          {issues.map((text) => <li key={text} className="issues__item">{text}</li>)}
+        </ul>
+      )}
     </section>
   )
 }

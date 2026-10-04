@@ -7,6 +7,7 @@ import { sendCommand, storage, vibrate } from './api.js'
 import { availability } from './availability.js'
 import { clearToken, readToken, writeToken } from './token.js'
 import {
+  AudioMixPanel,
   AudioPanel,
   Banners,
   Header,
@@ -15,12 +16,14 @@ import {
   Transport,
   WaitingScreen,
 } from './parts.jsx'
+import { useAudio } from './useAudio.js'
 import { usePanel } from './usePanel.js'
 
 export default function App() {
   const store = storage()
   const [token, setToken] = useState(() => readToken(store))
   const { state, link, rtt, unauthorized, applyState } = usePanel(token)
+  const mix = useAudio(token)
   const [notice, setNotice] = useState(null)
 
   // Wake Lock: экран не гаснет, пока страница видима. После возврата на вкладку
@@ -89,8 +92,8 @@ export default function App() {
     else setNotice(answer.error || 'команда отклонена')
   }, [token, store, applyState])
 
-  // Токена нет или сервер ответил 401 — экран ввода.
-  if (!token || unauthorized) {
+  // Токена нет или сервер ответил 401 (в том числе на звуковых ручках) — экран ввода.
+  if (!token || unauthorized || mix.unauthorized) {
     return (
       <TokenScreen
         onSubmit={(value) => {
@@ -126,7 +129,21 @@ export default function App() {
       />
       <Banners snap={state} notice={notice} onDismiss={() => setNotice(null)} />
       <main className="board">
-        <Transport snap={state} avail={avail} onCommand={run} />
+        <div className="column column--left">
+          <Transport snap={state} avail={avail} onCommand={run} />
+          <AudioMixPanel
+            audio={mix.audio}
+            online={mix.online}
+            busy={mix.busy}
+            notice={mix.notice}
+            pendingMode={mix.pendingMode}
+            onSetMode={mix.setMode}
+            onConfirmMode={mix.confirmMode}
+            onCancelMode={mix.cancelMode}
+            onSetDevice={mix.setDevice}
+            onDismissNotice={mix.dismissNotice}
+          />
+        </div>
         <SceneGrid
           scenes={state.scenes}
           active={state.scene}
