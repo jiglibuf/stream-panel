@@ -107,6 +107,125 @@ async def test_enable_stream_runs_steps_in_order_with_side_effects():
     assert ops.state and ops.state["headphones"] == SPEAKERS
 
 
+def test_loops_read_from_module_args_not_from_processing_hops():
+    """Петля объявляет себя аргументами модуля (source/sink) — это и есть её цель.
+
+    Связи портов дополнительно показывают промежуточные узлы (easyeffects_sink),
+    и раньше сервис принимал такую обработку за «звук ушёл в другое устройство»:
+    в живом пульте это давало три ложные тревоги. Фикстуры сняты с живой системы (pw-dump + pactl list modules).
+    """
+    import json
+
+    from server.audio_ops import SystemAudio
+
+    a20 = "alsa_output.usb-Logitech_A20_X_-_USB_wired_mode_0000000000000000-00.analog-stereo"
+    speakers = "alsa_output.pci-0000_00_1f.3.analog-stereo"
+    modules = (
+        "Module #30\n\tName: module-loopback\n"
+        f"\tArgument: source=game_mix.monitor sink={a20} latency_msec=30"
+        " source_dont_move=true sink_dont_move=true\n\tUsage counter: n/a\n"
+        "Module #31\n\tName: module-loopback\n"
+        f"\tArgument: source=discord_mix.monitor sink={a20} latency_msec=30"
+        " source_dont_move=true sink_dont_move=true\n\tUsage counter: n/a\n"
+    )
+
+    def dump(extra=None):
+        nodes = [("game_mix", 10), ("discord_mix", 11), ("output.loopback-1", 20),
+                 ("output.loopback-2", 21), ("easyeffects_sink", 30), (a20, 40)]
+        pairs = [(10, 20), (20, 40), (20, 30), (11, 21), (21, 40), (21, 30)]
+        if extra:
+            nodes.append((extra, 41))
+            pairs.append((20, 41))
+        data = [{"id": i, "type": "PipeWire:Interface:Node",
+                 "info": {"props": {"node.name": n}}} for n, i in nodes]
+        data += [{"id": 100 + k, "type": "PipeWire:Interface:Link",
+                  "info": {"output-node-id": o, "input-node-id": i}}
+                 for k, (o, i) in enumerate(pairs)]
+        return data
+
+    def provider(extra=None):
+        def run(args, check=False):
+            if args[0] == "pactl" and args[1] == "list" and args[2] == "modules":
+                return modules
+            if args[0] == "pw-dump":
+                return json.dumps(dump(extra))
+            return ""
+
+        return SystemAudio(run=run)
+
+    # обработка (easyeffects_sink) — не второе устройство: цель одна
+    assert provider().list_loops() == [
+        {"source": "game_mix.monitor", "targets": [a20]},
+        {"source": "discord_mix.monitor", "targets": [a20]},
+    ]
+
+    # а «прилипшее» физическое устройство — настоящая проблема (звук в двух местах)
+    from server.audio import collect_issues
+
+    loops = provider(speakers).list_loops()
+    assert loops[0]["targets"] == [a20, speakers]
+    assert collect_issues("stream", {"enabled": True, "active": True}, loops, a20,
+                          ["rz_mix", "game_mix", "discord_mix", a20, speakers])
+
+
+def test_env_forces_c_locale_for_pactl():
+    """pactl печатает поля на языке локали («Имя:», «Состояние:»), а разбор ждёт
+    английские: без LC_ALL=C список устройств молча получается пустым — в живом
+    сервисе вкладка «Звук» показывала «устройства не найдены», хотя pactl из
+    терминала работал. Проверяем, что провайдер задаёт локаль сам.
+    """
+    from server.audio_ops import SystemAudio
+
+    env = SystemAudio()._env()
+    assert env.get("LC_ALL") == "C"
+    assert env.get("LANG") == "C"
+    assert env.get("XDG_RUNTIME_DIR")
+
+
+def test_normal_mode_does_not_blame_easyeffects():
+    """EasyEffects живёт в системе всегда и к миксам эфира не относится: его
+    присутствие не должно выглядеть проблемой в обычном режиме (в живом снапшоте
+    это давало ложное «остались виртуальные выходы»)."""
+    from server.audio import NORMAL, collect_issues
+
+    service = {"enabled": False, "active": False}
+    assert collect_issues(NORMAL, service, [], "alsa_output.a",
+                          ["easyeffects_sink", "alsa_output.a"]) == []
+    # а наши собственные выходы в обычном режиме — настоящая проблема
+    assert collect_issues(NORMAL, service, [], "alsa_output.a",
+                          ["rz_mix", "alsa_output.a"])
+
+
+async def test_repeat_stream_repairs_dead_watchdog():
+    """Повторный тап «Стрим» лечит полуживой режим: сторож включён, но не работает.
+
+    Идемпотентность — про ЗДОРОВЫЙ режим. Владелец жмёт ту же кнопку именно тогда,
+    когда режим сломан, и молчаливый no-op выглядел бы как «кнопка не работает».
+    """
+    ops = FakeAudioOps(sinks=sinks(SPEAKERS, "rz_mix", "game_mix", "discord_mix"),
+                       default_sink="rz_mix", device=SPEAKERS, enabled=True, active=False)
+    env = await run(AudioController(ops).set_mode("stream"))
+
+    assert env["ok"] is True
+    assert step_keys(env) == ["device", "sinks", "loops", "default", "obs", "watchdog", "state"]
+    assert ops.active is True            # сторож поднят
+    assert "enable_service" in ops.mutations()
+
+
+async def test_repeat_stream_repairs_loops_playing_into_two_devices():
+    """Петли играют не туда (наш живой баг) — повторный «Стрим» это исправляет."""
+    picked = "alsa_output.usb-Фирма_Монитор_1-00.analog-stereo"
+    ops = FakeAudioOps(sinks=sinks(SPEAKERS, picked, "rz_mix", "game_mix", "discord_mix"),
+                       default_sink="rz_mix", device=picked, enabled=True, active=True)
+    ops.loops = [{"source": "game_mix.monitor", "targets": [SPEAKERS, picked]}]
+    env = await run(AudioController(ops).set_mode("stream"))
+
+    assert env["ok"] is True
+    assert step_keys(env) != []           # не no-op: состояние чинили
+    # петли переподключены на выбранное устройство (в фейке это create_loop/remove_loops/drop_loop_links)
+    assert ops.mutations() & {"create_loop", "remove_loops", "drop_loop_links"}
+
+
 async def test_enable_stream_is_idempotent_when_already_streaming():
     ops = FakeAudioOps(sinks=sinks(SPEAKERS, "rz_mix"), default_sink="rz_mix",
                        enabled=True, active=True)

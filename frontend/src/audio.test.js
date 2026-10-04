@@ -9,6 +9,7 @@ import {
   MODE_NORMAL,
   MODE_CONFIRM_TEXT,
   DEVICES_EMPTY_TEXT,
+  AUDIO_OBS_OFFLINE_HINT,
   modeLabel,
   isModeActive,
   shouldRequestMode,
@@ -191,9 +192,12 @@ test('сервис на связи — выбор устройства дост�
   assert.deepEqual(audioAvailability(AUDIO, true), { mode: true, device: true })
 })
 
-test('OBS офлайн — переключение режима недоступно, выбор устройства остаётся', () => {
+test('OBS офлайн — переключение режима всё равно доступно (сервер пропустит шаг с захватами)', () => {
   const offline = { ...AUDIO, obs: { online: false } }
-  assert.deepEqual(audioAvailability(offline, true), { mode: false, device: true })
+  assert.deepEqual(audioAvailability(offline, true), { mode: true, device: true })
+  // И владельцу честно сказано, что захваты не наведены — иначе он запустит эфир без звука.
+  assert.ok(AUDIO_OBS_OFFLINE_HINT.includes('OBS'))
+  assert.ok(AUDIO_OBS_OFFLINE_HINT.includes('Стрим'))
 })
 
 test('текст пустого списка устройств — непустая строка', () => {

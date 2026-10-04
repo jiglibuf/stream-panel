@@ -130,10 +130,15 @@ export function issuesList(audio) {
 }
 
 // online: true — сервис ответил, false — не отвечает, null — первый опрос ещё идёт.
-// Переключение режима требует живого OBS (шаг obs в ТЗ), а выбор устройства
-// пишется в файл и работает без него.
+// Переключение режима доступно всегда, когда сервис жив: системную часть сервер
+// сделает и при выключенном OBS (шаг с захватами он честно помечает пропущенным),
+// а иначе владелец не мог бы даже вернуться в обычный режим с закрытым OBS.
 export function audioAvailability(audio, online) {
   if (online !== true || !audio) return { mode: false, device: false }
-  const obsOnline = !!audio.obs && audio.obs.online === true
-  return { mode: obsOnline, device: true }
+  return { mode: true, device: true }
 }
+
+// Честное предупреждение: с выключенным OBS захваты не наведены, и эфир может
+// остаться без звука игры. Повторный тап «Стрим» при живом OBS это исправит.
+export const AUDIO_OBS_OFFLINE_HINT =
+  'OBS выключен: захваты звука не наведены. Запустите OBS и нажмите «Стрим» ещё раз.'
