@@ -229,6 +229,20 @@ class WsHub:
             except Exception:
                 self.discard(ws)
 
+    async def broadcast_audio(self, state: dict) -> None:
+        """Разослать состояние звука отдельным типом сообщения.
+
+        Снапшот звука несовместим по форме со снапшотом панели, поэтому его нельзя
+        сунуть в обычный «state» — фронт получил бы чужую структуру. Шлём своим
+        типом `audio`: клиенты, которые его не знают, просто игнорируют.
+        """
+        message = {"type": "audio", "audio": state}
+        for ws in list(self.clients):
+            try:
+                await self.send(ws, message)
+            except Exception:
+                self.discard(ws)
+
     async def _loop(self) -> None:
         while not self._closed:
             try:
@@ -244,6 +258,7 @@ class WsHub:
 HUB_KEY = web.AppKey("hub", WsHub)
 PANEL_KEY = web.AppKey("panel", object)
 COMMANDS_KEY = web.AppKey("commands", object)
+AUDIO_KEY = web.AppKey("audio", object)
 TOKEN_KEY = web.AppKey("token", str)
 CONFIG_PATH_KEY = web.AppKey("config_path", object)
 JOURNAL_KEY = web.AppKey("journal", object)
@@ -268,11 +283,16 @@ def _safe_file(frontend_dir: pathlib.Path, tail: str):
 
 
 def create_app(*, obs, panel, commands, token: str, config_path=None,
-               frontend_dir=None, push_interval: float = 0.2, journal=None) -> web.Application:
+               frontend_dir=None, push_interval: float = 0.2, journal=None,
+               audio=None) -> web.Application:
     """Собрать HTTP-приложение пульта. Все зависимости внедряются.
 
     `journal` необязателен: без него слой работает как раньше, без записей в
     журнал. Сбой самого журнала не влияет на ответы клиенту.
+
+    `audio` — контроллер звука (системный провайдер + режимы). Необязателен: без
+    него ручек `/api/audio*` в приложении нет вовсе, и остальной пульт работает
+    как прежде.
     """
     if frontend_dir is None:
         frontend_dir = DEFAULT_FRONTEND_DIR
@@ -289,6 +309,7 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
     app[HUB_KEY] = hub
     app[PANEL_KEY] = panel
     app[COMMANDS_KEY] = commands
+    app[AUDIO_KEY] = audio
     app[TOKEN_KEY] = token
     app[CONFIG_PATH_KEY] = config_path
     app[JOURNAL_KEY] = journal
@@ -338,6 +359,77 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
         await hub.broadcast(envelope.get("state"))
         return web.json_response(envelope)
 
+    async def _audio_body(request):
+        """Разобрать тело звуковых ручек; при мусоре вернуть готовый отказ 400."""
+        try:
+            raw = await request.text()
+            body = json.loads(raw) if raw.strip() else None
+        except ValueError:
+            return None, _error(400, "тело запроса не является JSON")
+        if not isinstance(body, dict):
+            return None, _error(400, "тело запроса должно быть объектом JSON")
+        return body, None
+
+    async def audio_get_handler(request):
+        return web.json_response(audio.snapshot())
+
+    async def audio_mode_handler(request):
+        started = time.monotonic()
+        body, bad = await _audio_body(request)
+        if bad is not None:
+            return bad
+        mode = body.get("mode")
+        if not isinstance(mode, str):
+            return _error(400, "поле mode должно быть строкой")
+        confirm = body.get("confirm", False)
+        if not isinstance(confirm, bool):
+            return _error(400, "поле confirm должно быть булевым")
+        try:
+            envelope = await audio.set_mode(mode, confirm=confirm)
+        except CommandError as exc:
+            code = getattr(exc, "code", 400)
+            await _record(journal, action="audio.mode",
+                          result="refused" if code == 409 else "error",
+                          source=request.remote, path=request.path,
+                          duration_ms=_duration_ms(started), changed=[],
+                          error=str(exc) or exc.__class__.__name__)
+            return _error(code, str(exc))
+        result, error, changed, extra = _journal_result(envelope)
+        await _record(journal, action="audio.mode", result=result, source=request.remote,
+                      path=request.path, duration_ms=_duration_ms(started),
+                      changed=changed, error=error, **extra)
+        if envelope.get("ok"):
+            # Состояние звука — отдельным типом сообщения (см. broadcast_audio).
+            await hub.broadcast_audio(envelope["state"])
+        # Сбой шага — это 500 с конвертом: в error текст, в steps что успело сделаться.
+        return web.json_response(envelope, status=200 if envelope.get("ok") else 500)
+
+    async def audio_device_handler(request):
+        started = time.monotonic()
+        body, bad = await _audio_body(request)
+        if bad is not None:
+            return bad
+        name = body.get("name")
+        if not isinstance(name, str):
+            return _error(400, "поле name должно быть строкой")
+        try:
+            envelope = await audio.set_device(name)
+        except CommandError as exc:
+            code = getattr(exc, "code", 400)
+            await _record(journal, action="audio.device",
+                          result="refused" if code == 409 else "error",
+                          source=request.remote, path=request.path,
+                          duration_ms=_duration_ms(started), changed=[],
+                          error=str(exc) or exc.__class__.__name__)
+            return _error(code, str(exc))
+        result, error, changed, extra = _journal_result(envelope)
+        await _record(journal, action="audio.device", result=result, source=request.remote,
+                      path=request.path, duration_ms=_duration_ms(started),
+                      changed=changed, error=error, **extra)
+        if envelope.get("ok"):
+            await hub.broadcast_audio(envelope["state"])
+        return web.json_response(envelope, status=200 if envelope.get("ok") else 500)
+
     async def ws_handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
@@ -380,6 +472,10 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
 
     app.router.add_get("/api/state", state_handler)
     app.router.add_post("/api/cmd", cmd_handler)
+    if audio is not None:
+        app.router.add_get("/api/audio", audio_get_handler)
+        app.router.add_post("/api/audio/mode", audio_mode_handler)
+        app.router.add_post("/api/audio/device", audio_device_handler)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/", index_handler)
     app.router.add_get("/{tail:.*}", static_handler)

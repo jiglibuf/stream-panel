@@ -20,6 +20,7 @@ import pathlib
 from aiohttp import web
 
 from .app import create_app
+from .audio_ops import AudioController, SystemAudio
 from .commands import Commands
 from .config import DEFAULT_CONFIG_PATH, load_or_create
 from .journal import Journal
@@ -70,9 +71,11 @@ async def main() -> None:
     obs.on_event = panel.on_event
     commands = Commands(obs, panel)
     journal = Journal(_journal_path(cfg))
+    # Звук: системный провайдер (pactl/pw-link/systemctl) + клиент OBS, поверх панели.
+    audio = AudioController(SystemAudio(obs), panel)
     app = create_app(obs=obs, panel=panel, commands=commands,
                      token=cfg["token"], config_path=DEFAULT_CONFIG_PATH,
-                     journal=journal)
+                     journal=journal, audio=audio)
 
     runner = web.AppRunner(app)
     await runner.setup()

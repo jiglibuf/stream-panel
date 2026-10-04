@@ -194,3 +194,150 @@ class FakeObs:
 
     def called(self, request_type: str) -> list[dict]:
         return [d for r, d in self.calls if r == request_type]
+
+
+class FakeAudioOps:
+    """Подставной системный провайдер звука: pactl/pw-link/systemctl/OBS — всё в памяти.
+
+    Живых pactl, PipeWire, systemctl и OBS не касается: владелец может слушать
+    музыку или быть в эфире, тесты не должны ничего менять в системе. Каждый вызов
+    пишется в `calls` (метод, аргументы) — тесты проверяют и результат, и шаги.
+    """
+
+    # Методы-мутаторы: их отсутствие в calls — доказательство «к системе не ходили».
+    MUTATORS = frozenset({
+        "set_default_sink", "create_sink", "remove_sink",
+        "create_loop", "remove_loops", "drop_loop_links",
+        "move_stream", "enable_service", "disable_service",
+        "write_device", "write_state", "remove_state",
+        "set_input_device", "remove_input",
+    })
+
+    def __init__(self, *, sinks=None, loops=None, streams=None, enabled: bool = False,
+                 active: bool = False, default_sink: str = "", device: str = "",
+                 state=None, obs_online: bool = True, inputs=None, failures=None):
+        self.sinks = [dict(s) for s in (sinks or [])]
+        self.loops = [{"source": l["source"], "targets": list(l["targets"])}
+                      for l in (loops or [])]
+        self.streams = [dict(s) for s in (streams or [])]
+        self.enabled = bool(enabled)
+        self.active = bool(active)
+        self.default = default_sink
+        self.device = device
+        self.state = dict(state) if state else None
+        self._obs_online = bool(obs_online)
+        self.inputs = dict(inputs or {})
+        self.failures = set(failures or ())
+        self.calls: list[tuple[str, tuple]] = []
+
+    def _log(self, method: str, *args) -> None:
+        self.calls.append((method, args))
+        if method in self.failures:
+            raise RuntimeError(f"{method}: отказ фейка")
+
+    def mutations(self) -> set:
+        return {m for m, _ in self.calls if m in self.MUTATORS}
+
+    # ── выходы ──
+    def list_sinks(self):
+        self._log("list_sinks")
+        return [dict(s) for s in self.sinks]
+
+    def default_sink(self):
+        self._log("default_sink")
+        return self.default
+
+    def set_default_sink(self, name):
+        self._log("set_default_sink", name)
+        self.default = name
+
+    def create_sink(self, name, description=""):
+        self._log("create_sink", name)
+        if name not in [s["name"] for s in self.sinks]:
+            self.sinks.append({"name": name, "state": "IDLE", "description": description})
+
+    def remove_sink(self, name):
+        self._log("remove_sink", name)
+        self.sinks = [s for s in self.sinks if s["name"] != name]
+
+    # ── петли ──
+    def list_loops(self):
+        self._log("list_loops")
+        return [{"source": l["source"], "targets": list(l["targets"])} for l in self.loops]
+
+    def create_loop(self, source, target):
+        self._log("create_loop", source, target)
+        for loop in self.loops:
+            if loop["source"] == source:
+                if target not in loop["targets"]:
+                    loop["targets"].append(target)
+                return
+        self.loops.append({"source": source, "targets": [target]})
+
+    def remove_loops(self, sources):
+        self._log("remove_loops", tuple(sources))
+        want = set(sources)
+        self.loops = [l for l in self.loops if l["source"] not in want]
+
+    def drop_loop_links(self, target):
+        self._log("drop_loop_links", target)
+        for loop in self.loops:
+            if target in loop["targets"]:
+                loop["targets"] = [t for t in loop["targets"] if t != target]
+
+    # ── потоки ──
+    def list_streams(self):
+        self._log("list_streams")
+        return [dict(s) for s in self.streams]
+
+    def move_stream(self, sid, target):
+        self._log("move_stream", sid, target)
+        for stream in self.streams:
+            if stream.get("id") == sid:
+                stream["sink"] = target
+
+    # ── служба ──
+    def service(self):
+        self._log("service")
+        return {"enabled": self.enabled, "active": self.active}
+
+    def enable_service(self):
+        self._log("enable_service")
+        self.enabled = self.active = True
+
+    def disable_service(self):
+        self._log("disable_service")
+        self.enabled = self.active = False
+
+    # ── файлы ──
+    def read_device(self):
+        self._log("read_device")
+        return self.device
+
+    def write_device(self, name):
+        self._log("write_device", name)
+        self.device = name
+
+    def read_state(self):
+        self._log("read_state")
+        return dict(self.state) if self.state else {}
+
+    def write_state(self, data):
+        self._log("write_state")
+        self.state = dict(data)
+
+    def remove_state(self):
+        self._log("remove_state")
+        self.state = None
+
+    # ── OBS ──
+    def obs_online(self):
+        return self._obs_online
+
+    async def set_input_device(self, name, device):
+        self._log("set_input_device", name, device)
+        self.inputs[name] = device
+
+    async def remove_input(self, name):
+        self._log("remove_input", name)
+        self.inputs.pop(name, None)
