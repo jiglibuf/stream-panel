@@ -1,0 +1,16 @@
+[Unit]
+Description=Турнирная сетка в эфир: снять страницу турнира и обновить картинку в OBS
+Documentation=file:%h/obs-panel/modules/redzone/README.md
+ConditionPathExists=%h/obs-panel/modules/redzone/bracket_update.py
+
+[Service]
+Type=oneshot
+# XDG_RUNTIME_DIR нужен, чтобы скрипт нашёл obs-websocket в сеансе пользователя.
+# Адрес турнирной страницы и путь к картинке скрипт берёт из окружения —
+# их владелец задаёт в ~/.config/stream-panel/env.
+Environment=XDG_RUNTIME_DIR=%t
+EnvironmentFile=-%h/.config/stream-panel/env
+ExecStart=/usr/bin/python3 %h/obs-panel/modules/redzone/bracket_update.py
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rz-bracket

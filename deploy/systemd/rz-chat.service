@@ -1,0 +1,22 @@
+[Unit]
+Description=Чат-релей: читает чат Twitch и отдаёт страницу для OBS
+Documentation=file:%h/obs-panel/modules/redzone/README.md
+After=network-online.target
+Wants=network-online.target
+# Модуль RedZone может быть не установлен — тогда служба просто пропускается.
+ConditionPathExists=%h/obs-panel/modules/redzone/chat_relay.py
+
+[Service]
+Type=simple
+# Канал и порт скрипт читает из окружения (CHAT_CHANNEL, CHAT_PORT, по умолчанию
+# 8097). Владелец задаёт их в ~/.config/stream-panel/env — секретов в юните нет.
+EnvironmentFile=-%h/.config/stream-panel/env
+ExecStart=/usr/bin/python3 %h/obs-panel/modules/redzone/chat_relay.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rz-chat
+
+[Install]
+WantedBy=default.target

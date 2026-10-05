@@ -1,0 +1,22 @@
+[Unit]
+Description=Релей общего эфира: хаб MediaMTX -> Twitch (совместный каст)
+Documentation=file:%h/obs-panel/modules/redzone/README.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/obs-panel/modules/redzone/cocast_relay.sh
+# Служба может перезапускаться долго — ограничение на число перезапусков снято.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Адрес и ключ Twitch релей читает из отдельного файла, который кладёт cocast.sh
+# (права 600). В юните и в журнале секретов нет.
+ExecStart=/bin/bash %h/obs-panel/modules/redzone/cocast_relay.sh
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rz-cocast-relay
+
+[Install]
+WantedBy=default.target

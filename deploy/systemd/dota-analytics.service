@@ -1,0 +1,24 @@
+[Unit]
+Description=Модуль аналитики Dota 2: GSI, сводки локальной моделью, оверлеи
+Documentation=file:%h/dota-analytics/README.md
+After=network-online.target
+Wants=network-online.target
+# Модуль аналитики — отдельный репозиторий; если его нет, служба пропускается.
+ConditionPathExists=%h/dota-analytics/pyproject.toml
+
+[Service]
+Type=simple
+WorkingDirectory=%h/dota-analytics
+Environment=PYTHONUNBUFFERED=1
+# Адрес привязки, модель Ollama и прочее — в конфиге модуля; переопределения
+# окружения — в ~/.config/stream-panel/env.
+EnvironmentFile=-%h/.config/stream-panel/env
+ExecStart=%h/dota-analytics/.venv/bin/python -m dota_gsi
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dota-analytics
+
+[Install]
+WantedBy=default.target

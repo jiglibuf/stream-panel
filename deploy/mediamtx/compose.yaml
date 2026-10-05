@@ -1,0 +1,22 @@
+# Хаб MediaMTX в Docker для приёма картинок друзей и раздачи общего эфира.
+#
+# Запуск (владелец, вручную):
+#   1. скопировать mediamtx.example.yml -> mediamtx.yml рядом с этим файлом и
+#      заменить все заглушки <...> на свои ключи;
+#   2. docker compose up -d
+#
+# Хаб по умолчанию не поднимается сам: пока владелец не запустит его, ничего не
+# работает. Флаг restart: unless-stopped возвращает контейнер после перезагрузки
+# только если его уже запускали.
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    # Порты задаёт mediamtx.yml: 8554 RTSP, 1935 RTMP, 8888 HLS,
+    # 8889 WebRTC, 8890 SRT/UDP, 9997 API. host-сеть отдаёт их напрямую.
+    network_mode: host
+    volumes:
+      # ,z перемаркирует файл для SELinux: без этого Fedora не пускает контейнер
+      # к конфигу (в логах это выглядит как «configuration file not found»).
+      - ./mediamtx.yml:/mediamtx.yml:ro,z

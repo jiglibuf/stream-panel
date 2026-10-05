@@ -1,0 +1,24 @@
+[Unit]
+Description=Сторож звука: держит виртуальные миксы и петли в наушники
+Documentation=file:%h/obs-panel/modules/redzone/README.md
+After=pipewire-pulse.service
+Wants=pipewire-pulse.service
+PartOf=graphical-session.target
+# Без модуля RedZone сторожевая служба не нужна — пропускаем.
+ConditionPathExists=%h/obs-panel/modules/redzone/rz_mix_watch.py
+
+[Service]
+Type=simple
+# Окружение наследуется: pactl ищет сокет PipeWire через XDG_RUNTIME_DIR.
+Environment=XDG_RUNTIME_DIR=%t
+Environment=PULSE_SERVER=unix:%t/pulse/native
+EnvironmentFile=-%h/.config/stream-panel/env
+ExecStart=/usr/bin/python3 %h/obs-panel/modules/redzone/rz_mix_watch.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rz-mix
+
+[Install]
+WantedBy=default.target
