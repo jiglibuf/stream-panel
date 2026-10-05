@@ -1,0 +1,1 @@
+drawtext=fontfile=/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf:text='%{localtime\:%T}':fontsize=150:fontcolor=white:box=1:boxcolor=black@0.75:boxborderw=24:x=40:y=40

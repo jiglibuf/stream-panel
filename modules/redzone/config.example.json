@@ -1,0 +1,121 @@
+{
+  "obs": {
+    "host": "127.0.0.1",
+    "port": 4455,
+    "ws_config": "~/.config/obs-studio/plugin_config/obs-websocket/config.json",
+    "scenes_dir": "~/.config/obs-studio/basic/scenes",
+    "collection": "Стрим",
+    "spare_collection": "Безымянный"
+  },
+
+  "paths": {
+    "state_dir": "~/.local/state/stream-panel/redzone",
+    "tiles_dir": "",
+    "overlay_dir": ""
+  },
+
+  "chat": {
+    "host": "127.0.0.1",
+    "port": 8097,
+    "channel": "<канал-на-twitch>",
+    "unit": "rz-chat.service"
+  },
+
+  "column": {
+    "x": 2024,
+    "width": 420,
+    "bracket_y": 632,
+    "bracket_height": 460,
+    "chat_y": 1100,
+    "chat_height": 340
+  },
+
+  "bracket": {
+    "url": "",
+    "chrome": "google-chrome",
+    "width": 420,
+    "height": 460,
+    "timer": "rz-bracket.timer"
+  },
+
+  "hub": {
+    "api": "http://127.0.0.1:9997",
+    "rtsp": "rtsp://127.0.0.1:8554",
+    "rtmp": "rtmp://127.0.0.1:1935",
+    "webrtc": "http://127.0.0.1:8889",
+    "program": "program",
+    "card": "card{n}",
+    "config": "<путь-к-mediamtx.yml>",
+    "credentials": "<файл-с-ключами-карт>",
+    "compose_dir": "<каталог-с-compose.yaml>",
+    "users": {
+      "rz": "<общий-ключ-публикации>",
+      "rz2": "<ключ-карты-2>",
+      "rz3": "<ключ-карты-3>",
+      "rz4": "<ключ-карты-4>",
+      "rzview": "<ключ-зрителя>"
+    }
+  },
+
+  "cocast": {
+    "relay_unit": "rz-cocast-relay.service",
+    "target": "~/.local/state/stream-panel/redzone/twitch-target.json",
+    "public_host": "<адрес-хоста-стрима>"
+  },
+
+  "audio": {
+    "unit": "rz-mix.service",
+    "all_sink": "rz_mix",
+    "game_sink": "game_mix",
+    "discord_sink": "discord_mix",
+    "headphones_hint": "<подстрока-имени-гарнитуры>",
+    "dota_watch": true
+  },
+
+  "sources": {
+    "background": "RZ · фон",
+    "panel": "RZ · плашка",
+    "title": "RZ · заголовок",
+    "subtitle": "RZ · подпись",
+    "webcam": "Вебка",
+    "webcam_frame": "Рамка вебки",
+    "alerts": "Алерты (фоллоу)",
+    "chat": "Чат (заготовка)",
+    "chat_rz": "Чат RZ",
+    "grid": "сетка",
+    "bracket": "Турнирная сетка",
+    "local_game": "Захват игры (Vulkan)",
+    "system_audio": "Звук системы",
+    "discord_audio": "Дискорд",
+    "microphone": "Микрофон"
+  },
+
+  "cards": {
+    "stream": "RZ К{n} эфир",
+    "game": "RZ К{n} игра",
+    "frame": "RZ К{n} рамка",
+    "focus": "RZ К{n} рамка фокус",
+    "label": "RZ К{n} подпись",
+    "hub": "RZ К{n} хаб"
+  },
+
+  "scenes": {
+    "mosaic": {
+      "RZ3 · 1": [1, [2, 3]],
+      "RZ3 · 2": [2, [3, 1]],
+      "RZ3 · 3": [3, [1, 2]]
+    },
+    "solo": {
+      "RZ · К1": 1,
+      "RZ · К2": 2,
+      "RZ · К3": 3
+    },
+    "hotkeys": {
+      "RZ3 · 1": "OBS_KEY_NUM1",
+      "RZ3 · 2": "OBS_KEY_NUM2",
+      "RZ3 · 3": "OBS_KEY_NUM3"
+    },
+    "order": ["RZ3 · 1", "RZ3 · 2", "RZ3 · 3", "RZ · К1", "RZ · К2", "RZ · К3"],
+    "column": ["RZ3 · 1", "RZ3 · 2", "RZ3 · 3"]
+  }
+}
