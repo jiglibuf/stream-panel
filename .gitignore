@@ -4,17 +4,22 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 node_modules/
-frontend/dist/
 
-# состояние пульта (не в git): токен, журнал, звуки
+# состояние пульта (не в git): токен, журнал, рабочие файлы
 /config.json
 /journal.jsonl*
-/sounds/
 /run/
-
-# ТЗ живёт вне репозитория (конвенция проекта)
-docs/TZ-*.md
-
-# служебное
-scratch/
 *.log
+*.pid
+*.state
+
+# рабочие данные модулей
+/modules/*/config.json
+/data/
+*.bak
+
+# профиль браузера для снимков интерфейса
+.chrome-profile/
+
+# ВНИМАНИЕ: собранный фронт (frontend/dist) и sounds/ СОБИРАЮТСЯ в репозиторий
+# сознательно — так пульт запускается без установки Node (см. docs/INSTALL.md).
