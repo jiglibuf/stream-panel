@@ -5,10 +5,10 @@ import assert from 'node:assert/strict'
 import { wsUrl, parseMessage } from './ws.js'
 
 test('http -> ws, https -> wss', () => {
-  assert.equal(wsUrl({ protocol: 'http:', host: '192.168.3.153:8090' }, 'abc'),
-    'ws://192.168.3.153:8090/ws?token=abc')
-  assert.equal(wsUrl({ protocol: 'https:', host: 'beelink.tail:8090' }, 'abc'),
-    'wss://beelink.tail:8090/ws?token=abc')
+  assert.equal(wsUrl({ protocol: 'http:', host: 'panel.local:8090' }, 'abc'),
+    'ws://panel.local:8090/ws?token=abc')
+  assert.equal(wsUrl({ protocol: 'https:', host: 'obs-host:8090' }, 'abc'),
+    'wss://obs-host:8090/ws?token=abc')
 })
 
 test('токен кодируется как параметр запроса', () => {

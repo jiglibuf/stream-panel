@@ -27,7 +27,7 @@ import {
   audioAvailability,
 } from './audio.js'
 
-// Снимок как его отдаёт GET /api/audio (ТЗ, раздел 3). В списке есть все три
+// Снимок как его отдаёт GET /api/audio (см. docs/AUDIO.md). В списке есть все три
 // вида устройств: виртуальные и мониторы в выборе не участвуют.
 const AUDIO = {
   mode: 'stream',

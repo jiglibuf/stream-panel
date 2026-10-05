@@ -16,7 +16,7 @@ function offlineResult() {
 
 export function availability(state) {
   const snap = state || {}
-  // OBS офлайн — недоступно ВСЁ (F1): ни одна команда не буферизуется.
+  // OBS офлайн — недоступно ВСЁ: ни одна команда не буферизуется.
   if (!snap.obs) return offlineResult()
 
   // Разрушительные действия запрещены на устаревших данных; остальные живут.

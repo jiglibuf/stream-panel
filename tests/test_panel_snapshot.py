@@ -65,8 +65,8 @@ async def test_duplicate_scene_names_are_collapsed():
     assert [s["num"] for s in snap["scenes"]] == [1, 3]
 
 
-def test_defaults_follow_tz_intervals():
-    """ТЗ §8.1: порог устаревания — не меньше двух интервалов полного ресинка."""
+def test_defaults_follow_expected_intervals():
+    """Порог устаревания — не меньше двух интервалов полного ресинка."""
     panel = Panel(FakeObs())
 
     assert panel.refresh_interval == 2.0

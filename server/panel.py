@@ -37,7 +37,7 @@ _OFFLINE = "OBS офлайн"
 _EMPTY_STREAM = {"active": False, "time": "", "reconnect": False}
 _EMPTY_RECORD = {"active": False, "time": ""}
 
-# Интервалы по умолчанию (ТЗ §8.1): полный ресинк каждые 2 с, порог устаревания —
+# Интервалы по умолчанию (см. docs/ARCHITECTURE.md): полный ресинк каждые 2 с, порог устаревания —
 # 10 с. Равные значения заставляли бы stale мигать ровно на границе опроса.
 DEFAULT_REFRESH_INTERVAL = 2.0
 DEFAULT_STALE_AFTER = 10.0

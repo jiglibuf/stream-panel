@@ -51,7 +51,7 @@ def test_classify_unknown_name_is_physical():
     assert classify("") == PHYSICAL
 
 
-# ── 2. выбор устройства (ТЗ 2.2) ──
+# ── 2. выбор устройства (см. docs/AUDIO.md) ──
 
 def test_choose_device_prefers_saved_choice():
     names = [SPEAKERS, PHONES, "rz_mix"]

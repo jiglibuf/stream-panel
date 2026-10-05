@@ -5,9 +5,9 @@
 * `SystemAudio` — провайдер: единственное место, где мы трогаем систему (модули
   PipeWire, выход по умолчанию, служба-сторож, файлы состояния, источники OBS).
   Интерфейс намеренно грубый, чтобы в тестах подменяться целиком (`FakeAudioOps`).
-* `AudioController` — исполнитель: по состоянию провайдера собирает снапшот для
-  `GET /api/audio` и выполняет шаги включения/выключения режима строго в порядке
-  ТЗ §4, отдавая конверт как у `/api/cmd`.
+* `AudioController` — управляющий слой: по состоянию провайдера собирает снапшот
+  для `GET /api/audio` и выполняет шаги включения/выключения режима строго в
+  порядке из docs/AUDIO.md, отдавая конверт как у `/api/cmd`.
 
 Почему не зовём скрипты владельца (`rz_mix_on.sh` и т.п.): они собирают звук через
 `python3 - <<PY` с модулем `websockets`, которого в системном python нет. Пульт
@@ -323,7 +323,7 @@ class SystemAudio:
             pass  # источника могло не быть — это не ошибка выключения
 
 
-# ── исполнитель ──
+# ── управляющий слой ──
 class AudioController:
     """Собирает снапшот звука и выполняет переключение режима/устройства.
 
@@ -402,7 +402,7 @@ class AudioController:
         играют не туда или сразу в два места, в обычном режиме остались виртуальные
         выходы. Тогда повторный тап по тому же режиму должен ПОЧИНИТЬ, а не молчать:
         владелец жмёт «Стрим» именно в такой ситуации, и no-op выглядел бы как
-        «кнопка не работает». Идемпотентность ТЗ §3 — про здоровое состояние.
+        «кнопка не работает». Идемпотентность режима — про здоровое состояние.
         """
         names = self._names()
         chosen = choose_device(names, self.ops.read_device())
@@ -410,7 +410,7 @@ class AudioController:
                                    chosen, names))
 
     async def _enable_stream(self) -> dict:
-        """Порядок шагов ТЗ §4: device → sinks → loops → default → obs → watchdog → state."""
+        """Порядок шагов (docs/AUDIO.md): device → sinks → loops → default → obs → watchdog → state."""
         device = choose_device(self._names(), self.ops.read_device())
         previous = self.ops.default_sink()
 
@@ -460,7 +460,7 @@ class AudioController:
         return await self._run_plan("audio.mode", plan)
 
     async def _disable_stream(self) -> dict:
-        """Порядок шагов ТЗ §4: watchdog → default → streams → loops → sinks → obs → state."""
+        """Порядок шагов (docs/AUDIO.md): watchdog → default → streams → loops → sinks → obs → state."""
         device = choose_device(self._names(), self.ops.read_device())
         target = device or self.ops.default_sink()
 

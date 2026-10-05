@@ -8,15 +8,15 @@
 Два класса ошибок несут HTTP-код для верхнего слоя: CommandError = 400 (команда
 неизвестна или аргументы неверны), RefusedError = 409 (команда неуместна в
 текущем состоянии: нет подтверждения, OBS офлайн, данные устарели, буфер повтора
-выключен). После успешной команды слой делает полный ресинк (F3) и возвращает
+выключен). После успешной команды слой делает полный ресинк и возвращает
 свежий снапшот; после отказа к OBS не ходит вовсе.
 """
 from __future__ import annotations
 
-# Сцена «Паника»: имя из коллекции «Стрим» (ТЗ §8.6).
+# Сцена «Паника»: имя из коллекции «Стрим».
 BLACK_SCENE = "Чёрный экран"
 
-# Разрушительные команды: при устаревших данных отказывают (ТЗ §8.2).
+# Разрушительные команды: при устаревших данных отказывают (см. docs/ARCHITECTURE.md).
 DESTRUCTIVE = frozenset({"stream.start", "stream.stop", "record.toggle", "replay.save"})
 
 # Команды без аргументов.
@@ -58,7 +58,7 @@ class RefusedError(CommandError):
 
 
 class Commands:
-    """Исполнитель команд: валидирует, дёргает OBS, синхронизирует Panel.
+    """Обработчик команд: валидирует, дёргает OBS, синхронизирует Panel.
 
     obs — клиент с `connected` и `async req(request_type, **data)`;
     panel — снапшот состояния (источник истины о текущем режиме OBS).
@@ -250,7 +250,7 @@ class Commands:
 
     # ── сборка конверта ──
     async def _success(self, name: str, changed: list[str]) -> dict:
-        state = await self.panel.refresh()  # F3: после команды — полный ресинк
+        state = await self.panel.refresh()  # после команды — полный ресинк
         return {"ok": True, "name": name, "changed": list(changed),
                 "state": state, "error": None}
 
