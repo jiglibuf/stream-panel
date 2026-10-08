@@ -606,6 +606,57 @@ p {
   grid-template-columns: repeat(2, minmax(88px, 1fr));
 }
 
+/* Автоматика режима: тумблер, который держит «Стрим» на время эфира. */
+.auto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.auto:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.auto.is-on {
+  border-color: rgba(53, 196, 107, 0.55);
+  background: linear-gradient(180deg, rgba(53, 196, 107, 0.18), rgba(53, 196, 107, 0.06));
+}
+
+.auto__title {
+  font-weight: 700;
+}
+
+.auto__state {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.auto.is-on .auto__state {
+  border-color: rgba(53, 196, 107, 0.5);
+  color: #8fe0ac;
+}
+
+.auto__hint {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 .modes {
   display: grid;
   grid-template-columns: repeat(2, minmax(88px, 1fr));

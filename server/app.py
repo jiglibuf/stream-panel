@@ -284,7 +284,7 @@ def _safe_file(frontend_dir: pathlib.Path, tail: str):
 
 def create_app(*, obs, panel, commands, token: str, config_path=None,
                frontend_dir=None, push_interval: float = 0.2, journal=None,
-               audio=None) -> web.Application:
+               audio=None, audio_auto=None) -> web.Application:
     """Собрать HTTP-приложение пульта. Все зависимости внедряются.
 
     `journal` необязателен: без него слой работает как раньше, без записей в
@@ -293,6 +293,9 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
     `audio` — контроллер звука (системный провайдер + режимы). Необязателен: без
     него ручек `/api/audio*` в приложении нет вовсе, и остальной пульт работает
     как прежде.
+
+    `audio_auto` — автоматика режима звука по состоянию эфира. Тоже необязательна:
+    без неё нет ручки `/api/audio/auto`, а состояние звука отдаётся как раньше.
     """
     if frontend_dir is None:
         frontend_dir = DEFAULT_FRONTEND_DIR
@@ -371,7 +374,10 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
         return body, None
 
     async def audio_get_handler(request):
-        return web.json_response(audio.snapshot())
+        snapshot = audio.snapshot()
+        if audio_auto is not None:
+            snapshot["auto"] = {"enabled": bool(audio_auto.enabled)}
+        return web.json_response(snapshot)
 
     async def audio_mode_handler(request):
         started = time.monotonic()
@@ -430,6 +436,29 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
             await hub.broadcast_audio(envelope["state"])
         return web.json_response(envelope, status=200 if envelope.get("ok") else 500)
 
+    async def audio_auto_handler(request):
+        """Тумблер автоматики режима звука: и в памяти, и в файле."""
+        started = time.monotonic()
+        body, bad = await _audio_body(request)
+        if bad is not None:
+            return bad
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            return _error(400, "поле enabled должно быть булевым")
+        audio_auto.set_enabled(enabled)
+        snapshot = audio.snapshot()
+        snapshot["auto"] = {"enabled": bool(audio_auto.enabled)}
+        envelope = {
+            "ok": True, "name": "audio.auto", "changed": ["auto"],
+            "steps": ["auto: автоматика " + ("включена" if enabled else "выключена")],
+            "state": snapshot, "error": None,
+        }
+        await _record(journal, action="audio.auto", result="ok", source=request.remote,
+                      path=request.path, duration_ms=_duration_ms(started),
+                      changed=["auto"], error=None)
+        await hub.broadcast_audio(envelope["state"])
+        return web.json_response(envelope)
+
     async def ws_handler(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
@@ -476,6 +505,8 @@ def create_app(*, obs, panel, commands, token: str, config_path=None,
         app.router.add_get("/api/audio", audio_get_handler)
         app.router.add_post("/api/audio/mode", audio_mode_handler)
         app.router.add_post("/api/audio/device", audio_device_handler)
+        if audio_auto is not None:
+            app.router.add_post("/api/audio/auto", audio_auto_handler)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/", index_handler)
     app.router.add_get("/{tail:.*}", static_handler)

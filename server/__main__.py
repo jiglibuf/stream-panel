@@ -20,6 +20,7 @@ import pathlib
 from aiohttp import web
 
 from .app import create_app
+from .audio_auto import AutoSwitch, read_auto_flag, run as run_auto_switch
 from .audio_ops import AudioController, SystemAudio
 from .commands import Commands
 from .config import DEFAULT_CONFIG_PATH, load_or_create
@@ -73,9 +74,12 @@ async def main() -> None:
     journal = Journal(_journal_path(cfg))
     # Звук: системный провайдер (pactl/pw-link/systemctl) + клиент OBS, поверх панели.
     audio = AudioController(SystemAudio(obs), panel)
+    # Автоматика режима звука: идёт эфир — «Стрим», эфир кончился — «Обычный».
+    # Тумблер хранится файлом рядом с остальными настройками звука.
+    audio_auto = AutoSwitch(enabled=read_auto_flag())
     app = create_app(obs=obs, panel=panel, commands=commands,
                      token=cfg["token"], config_path=DEFAULT_CONFIG_PATH,
-                     journal=journal, audio=audio)
+                     journal=journal, audio=audio, audio_auto=audio_auto)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -88,6 +92,7 @@ async def main() -> None:
             group.create_task(obs.run(), name="obs")
             group.create_task(panel.run(), name="panel")
             group.create_task(_watch_obs(obs), name="obs-watch")
+            group.create_task(run_auto_switch(panel, audio, audio_auto), name="audio-auto")
     finally:
         # Сюда попадаем и по Ctrl+C: сначала гасим клиент OBS, затем приложение
         # (on_cleanup приложения останавливает рассылку WebSocket).

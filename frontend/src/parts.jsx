@@ -16,6 +16,8 @@ import {
   statusLine,
   DEVICES_EMPTY_TEXT,
   AUDIO_OBS_OFFLINE_HINT,
+  AUDIO_AUTO_HINT,
+  isAutoEnabled,
 } from './audio.js'
 import { holdResult, HOLD_DONE } from './hold.js'
 import { formatTimecode } from './timecode.js'
@@ -264,7 +266,7 @@ export function AudioPanel({ snap, avail, onCommand }) {
 // живом эфире (переключение рвёт звук на несколько секунд).
 export function AudioMixPanel({
   audio, online, busy, notice, pendingMode,
-  onSetMode, onConfirmMode, onCancelMode, onSetDevice, onDismissNotice,
+  onSetMode, onConfirmMode, onCancelMode, onSetDevice, onSetAuto, onDismissNotice,
 }) {
   const avail = audioAvailability(audio, online)
   const devices = sortDevices(audio && audio.devices)
@@ -314,6 +316,19 @@ export function AudioMixPanel({
         {modeButton(MODE_STREAM, 'Стрим', 'выходы и петли')}
         {modeButton(MODE_NORMAL, 'Обычный', 'прямой вывод')}
       </div>
+
+      <button
+        type="button"
+        className={`auto ${isAutoEnabled(audio) ? 'is-on' : ''}`}
+        role="switch"
+        aria-checked={isAutoEnabled(audio)}
+        disabled={off || busy}
+        onClick={() => onSetAuto(!isAutoEnabled(audio))}
+      >
+        <span className="auto__title">Автоматика режима</span>
+        <span className="auto__state">{isAutoEnabled(audio) ? 'включена' : 'выключена'}</span>
+        <span className="auto__hint">{AUDIO_AUTO_HINT}</span>
+      </button>
 
       {obsOffline && (
         <p className="mix__note">{AUDIO_OBS_OFFLINE_HINT}</p>

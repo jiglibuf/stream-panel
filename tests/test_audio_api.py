@@ -10,6 +10,7 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from server.app import make_guard
+from server.audio_auto import AutoSwitch, read_auto_flag
 from server.audio_ops import AudioController
 from server.commands import Commands
 from server.panel import Panel
@@ -30,7 +31,8 @@ def sinks(*names):
     return [{"name": n, "state": "IDLE", "description": n} for n in names]
 
 
-async def make_audio_stack(*, ops_kw=None, streaming: bool = False, recording: bool = False):
+async def make_audio_stack(*, ops_kw=None, streaming: bool = False, recording: bool = False,
+                           auto_flag=None):
     """Стек пульта с фейковым системным провайдером звука."""
     responses = dict(RESPONSES)
     responses["GetStreamStatus"] = {"outputActive": streaming,
@@ -48,7 +50,8 @@ async def make_audio_stack(*, ops_kw=None, streaming: bool = False, recording: b
     from server.app import create_app
 
     app = create_app(obs=obs, panel=panel, commands=commands, token=TOKEN,
-                     push_interval=0.05, audio=audio)
+                     push_interval=0.05, audio=audio,
+                     audio_auto=AutoSwitch(flag_path=auto_flag) if auto_flag else None)
     await panel.refresh()
     return app, obs, panel, ops, audio
 
@@ -201,6 +204,35 @@ async def test_set_device_garbage_body_400():
         assert (await cl.post("/api/audio/device", json={}, headers=auth())).status == 400
         assert (await cl.post("/api/audio/device", json={"name": 5},
                               headers=auth())).status == 400
+
+
+# ── 4. POST /api/audio/auto ──
+
+async def test_auto_toggle_switches_and_is_remembered_in_file(tmp_path):
+    """Тумблер автоматики: переключается и запоминается в файле рядом с настройками."""
+    flag = tmp_path / "rz_mix.auto"
+    app, *_ = await make_audio_stack(auto_flag=flag)
+    async with running(app) as cl:
+        snap = await (await cl.get("/api/audio", headers=auth())).json()
+        assert snap["auto"] == {"enabled": True}            # по умолчанию включена
+
+        resp = await cl.post("/api/audio/auto", headers=auth(), json={"enabled": False})
+        assert resp.status == 200
+        envelope = await resp.json()
+        assert envelope["ok"] is True and envelope["changed"] == ["auto"]
+        assert envelope["state"]["auto"] == {"enabled": False}
+        assert flag.read_text(encoding="utf-8").strip() == "off"
+
+        # Решение переживает перезапуск пульта: при старте читается тот же файл.
+        assert read_auto_flag(flag) is False
+
+
+async def test_auto_toggle_requires_token_and_boolean(tmp_path):
+    app, *_ = await make_audio_stack(auto_flag=tmp_path / "rz_mix.auto")
+    async with running(app) as cl:
+        assert (await cl.post("/api/audio/auto", json={"enabled": True})).status == 401
+        assert (await cl.post("/api/audio/auto", headers=auth(),
+                              json={"enabled": "да"})).status == 400
 
 
 # ── 5. без звукового контроллера ручек нет ──

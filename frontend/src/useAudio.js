@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { fetchAudio, sendAudio, storage } from './api.js'
-import { modeRequest, needsConfirm, shouldRequestMode } from './audio.js'
+import { autoRequest, modeRequest, needsConfirm, shouldRequestMode } from './audio.js'
 
 const POLL_INTERVAL_MS = 4000
 
@@ -112,6 +112,9 @@ export function useAudio(token) {
 
   const setDevice = useCallback((name) => act('device', { name }), [act])
 
+  // Тумблер автоматики: решение запоминает сервер, пульт только просит.
+  const setAuto = useCallback((enabled) => act('auto', autoRequest(enabled)), [act])
+
   return {
     audio,
     online,
@@ -123,6 +126,7 @@ export function useAudio(token) {
     confirmMode,
     cancelMode,
     setDevice,
+    setAuto,
     dismissNotice: () => setNotice(null),
     refresh: load,
   }
