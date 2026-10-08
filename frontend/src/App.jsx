@@ -141,6 +141,7 @@ export default function App() {
             onConfirmMode={mix.confirmMode}
             onCancelMode={mix.cancelMode}
             onSetDevice={mix.setDevice}
+            onSetAuto={mix.setAuto}
             onDismissNotice={mix.dismissNotice}
           />
         </div>

@@ -338,6 +338,15 @@ class AudioController:
         self.clock = clock
 
     # ── чтение состояния ──
+    def current_mode(self) -> str:
+        """Текущий режим без полного снапшота: два дешёвых вызова systemctl.
+
+        Нужен автоматике: она опрашивает состояние каждые пару секунд, и собирать
+        ради этого весь снапшот (с pactl и разбором петель) незачем.
+        """
+        service = self.ops.service() or {}
+        return compute_mode(service.get("enabled"), service.get("active"))
+
     def snapshot(self) -> dict:
         service = self.ops.service() or {}
         mode = compute_mode(service.get("enabled"), service.get("active"))

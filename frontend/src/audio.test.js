@@ -4,6 +4,33 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
+// ── автоматика режима: состояние читается с сервера, команда — одно булево ──
+
+test('тумблер автоматики берётся из состояния сервера', () => {
+  assert.equal(isAutoEnabled({ auto: { enabled: true } }), true)
+  assert.equal(isAutoEnabled({ auto: { enabled: false } }), false)
+})
+
+test('без поля автоматики считаем её выключенной, а не выдумываем', () => {
+  // Старый сервер поля не отдаёт: пульт обязан показать «выключена», а не гадать.
+  assert.equal(isAutoEnabled({}), false)
+  assert.equal(isAutoEnabled({ auto: {} }), false)
+  assert.equal(isAutoEnabled(null), false)
+  assert.equal(isAutoEnabled(undefined), false)
+})
+
+test('команда тумблера — строго булево поле enabled', () => {
+  assert.deepEqual(autoRequest(true), { enabled: true })
+  assert.deepEqual(autoRequest(false), { enabled: false })
+  assert.deepEqual(autoRequest('да'), { enabled: false })
+  assert.deepEqual(autoRequest(undefined), { enabled: false })
+})
+
+test('подсказка честно объясняет, что делает автоматика', () => {
+  assert.match(AUDIO_AUTO_HINT, /эфир/)
+  assert.match(AUDIO_AUTO_HINT, /Обычный/)
+})
+
 import {
   MODE_STREAM,
   MODE_NORMAL,
@@ -25,6 +52,9 @@ import {
   serviceText,
   issuesList,
   audioAvailability,
+  isAutoEnabled,
+  autoRequest,
+  AUDIO_AUTO_HINT,
 } from './audio.js'
 
 // Снимок как его отдаёт GET /api/audio (см. docs/AUDIO.md). В списке есть все три

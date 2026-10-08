@@ -138,6 +138,22 @@ export function audioAvailability(audio, online) {
   return { mode: true, device: true }
 }
 
+// Автоматика режима: сервер сам включает «Стрим» на время эфира и возвращает
+// «Обычный», когда эфир закончился. Тумблер хранится на сервере (файл рядом с
+// остальными настройками звука), поэтому после перезапуска решение сохраняется.
+export function isAutoEnabled(audio) {
+  const auto = (audio && audio.auto) || null
+  return !!(auto && auto.enabled === true)
+}
+
+export function autoRequest(enabled) {
+  return { enabled: enabled === true }
+}
+
+export const AUDIO_AUTO_HINT =
+  'Идёт эфир — «Стрим» включается сам, после эфира режим возвращается в «Обычный».'
+
+
 // Честное предупреждение: с выключенным OBS захваты не наведены, и эфир может
 // остаться без звука игры. Повторный тап «Стрим» при живом OBS это исправит.
 export const AUDIO_OBS_OFFLINE_HINT =
