@@ -299,6 +299,23 @@ async def test_mode_switch_refused_when_recording():
         await run(AudioController(ops, StubPanel(recording=True)).set_mode("stream"))
 
 
+async def test_normal_switch_allowed_when_obs_offline_and_stream_flag_stale():
+    """OBS закрыли, а в состоянии пульта остался старый «идёт эфир».
+
+    Отказывать тут нельзя: эфира нет, прерывать нечего, а иначе владелец не вернёт
+    себе звук — в живом пульте вышло ровно так: 409 «идёт эфир» при выключенном OBS,
+    и миксы со сторожем продолжали работать.
+    """
+    ops = FakeAudioOps(sinks=sinks(SPEAKERS, "rz_mix", "game_mix", "discord_mix"),
+                       default_sink="rz_mix", device=SPEAKERS, enabled=True, active=True,
+                       obs_online=False)
+    env = await run(AudioController(ops, StubPanel(obs=False, streaming=True)).set_mode("normal"))
+
+    assert env["ok"] is True and env["error"] is None
+    assert "watchdog" in env["changed"]
+    assert ops.enabled is False and ops.active is False
+
+
 async def test_mode_switch_proceeds_with_confirm_when_live():
     ops = FakeAudioOps(sinks=sinks(SPEAKERS), default_sink=SPEAKERS)
     env = await run(AudioController(ops, StubPanel(streaming=True)).set_mode("stream", confirm=True))
