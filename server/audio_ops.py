@@ -370,13 +370,21 @@ class AudioController:
                 "is_chosen": bool(chosen) and name == chosen}
 
     def _obs(self) -> dict:
+        """Состояние OBS для блока звука.
+
+        Когда OBS офлайн, залипшие от прошлого раза `stream.active`/`record.active`
+        не считаются живыми: эфира нет, прерывать нечего. Иначе пульт отказывает в
+        переключении режима «идёт эфир» при выключенном OBS, и владелец не может
+        вернуть себе звук — а миксы со сторожем продолжают работать.
+        """
         state = getattr(self.panel, "state", None) if self.panel is not None else None
         if not isinstance(state, dict):
             return {"online": bool(self.ops.obs_online()),
                     "streaming": False, "recording": False}
-        return {"online": bool(state.get("obs")),
-                "streaming": bool((state.get("stream") or {}).get("active")),
-                "recording": bool((state.get("record") or {}).get("active"))}
+        online = bool(state.get("obs"))
+        return {"online": online,
+                "streaming": online and bool((state.get("stream") or {}).get("active")),
+                "recording": online and bool((state.get("record") or {}).get("active"))}
 
     def _names(self) -> list[str]:
         return [s.get("name") for s in (self.ops.list_sinks() or []) if s.get("name")]
